@@ -41,3 +41,9 @@ next-env.d.ts
 /outputs/
 /work/
 /fullstack-source/
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  

@@ -2,42 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-
-test("renders development preview metadata", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  const response = await worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
+test("ships static first paint with the full demo snapshot", async () => {
+  const html = await readFile(
+    new URL("../out/index.html", import.meta.url),
+    "utf8",
   );
 
-  assert.equal(response.status, 200);
-  assert.match(
-    response.headers.get("content-type") ?? "",
-    /^text\/html\b/i,
-  );
-  const html = await response.text();
-  assert.match(html, developmentPreviewMeta);
+  assert.match(html, /lang=["']zh-CN["']/);
   assert.match(html, /执行轨迹/);
   assert.match(html, /工具调用/);
   assert.match(html, /知识来源/);
   assert.match(html, /作品演示快照/);
   assert.match(html, /analyze_query/);
   assert.doesNotMatch(html, /尚无执行记录/);
+  // Static export must not pull cross-border fonts or the legacy hosted origin.
+  assert.doesNotMatch(
+    html,
+    /fonts\.googleapis\.com|fonts\.gstatic\.com|chatgpt\.site/,
+  );
 });
 
 test("ships non-empty tool and knowledge fixtures", async () => {
