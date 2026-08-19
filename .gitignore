@@ -46,4 +46,8 @@ next-env.d.ts
 .env
 .edgeone/*
 .tef_dist/*
+
+# runtime / build caches (regenerated; not source)
+.tmp/
+.vinext/
   
