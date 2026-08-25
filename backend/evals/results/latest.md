@@ -1,6 +1,6 @@
 # Evaluation report
 
-- Generated: 2026-08-25T16:36:43.300736+00:00
+- Generated: 2026-08-25T17:44:08.036977+00:00
 - Provider: `deterministic`
 - Model: `deterministic-baseline-v2`
 - Cases: 54
