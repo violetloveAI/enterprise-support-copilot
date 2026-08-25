@@ -1,0 +1,5 @@
+[
+  {"claim_id":"CLM-2026-005","voucher_id":null,"status":"FAILED","posting_date":"2026-08-05","error_code":"FI_PERIOD_CLOSED","message":"公司代码C100的2026-08财务期间未开放"},
+  {"claim_id":"CLM-2026-006","voucher_id":"VCH-900006","status":"POSTED","posting_date":"2026-08-06","error_code":null,"message":"凭证过账成功"},
+  {"claim_id":"CLM-2026-007","voucher_id":"VCH-900007","status":"POSTED","posting_date":"2026-08-07","error_code":null,"message":"凭证过账成功"}
+]

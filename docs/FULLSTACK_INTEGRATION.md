@@ -1,57 +1,37 @@
-# Full-stack integration contract
+# Full-stack integration
 
-前端 V3 当前使用 `Scenario` fixture 驱动。接入 FastAPI / LangGraph 时应保留该 fixture 作为离线演示 fallback，并把后端事件映射到相同 UI 状态。
+The frontend integration is implemented in `app/support-api.ts` and `app/SupportConsole.tsx`.
 
-## 建议接口
+## Configure
 
-### `POST /api/runs`
+Build or start the frontend with:
 
-请求：
-
-```json
-{"query":"今天很多员工提交报销时统一显示 500，发生了什么？"}
+```bash
+NEXT_PUBLIC_AGENT_API_URL=http://localhost:8000 npm run dev
 ```
 
-响应至少包含 `run_id`、`thread_id` 与 `status`。前端随后订阅事件流。
+Without this variable the product runs in explicit fixture mode.
 
-### `GET /api/runs/{run_id}/events`
+## Invoke
 
-建议使用 SSE。每条事件包含：
-
-```json
-{
-  "node": "execute_tools",
-  "status": "succeeded",
-  "latency_ms": 244,
-  "safe_summary": "1/1 calls succeeded",
-  "tool_calls": [],
-  "citations": []
-}
-```
-
-只返回可展示的安全摘要，不返回 chain-of-thought。
-
-### `POST /api/runs/{run_id}/approval`
+`POST /api/v1/chat/invoke`
 
 ```json
-{"action":"create_ticket","decision":"approve","idempotency_key":"RUN-9D42C8"}
+{ "message": "CLM-2026-005 为什么凭证生成失败？" }
 ```
 
-后端必须再次执行确定性授权检查；不能把前端弹窗视为安全边界。
+The response includes `run_id`, `thread_id`, status, structured diagnosis, retrieved sources, audited tool calls, safe run events, the active model provider and retrieval provider.
 
-## UI 状态映射
+## Resume HITL
 
-| 后端状态 | 前端状态 |
-| --- | --- |
-| 无活动运行 | `idle`，展示最近一次脱敏完整快照 |
-| 收到首个事件 | `running`，逐步解锁 Trace / Tools / Knowledge |
-| Graph 完成 | `complete`，显示结构化诊断与 JSON |
-| Graph interrupt | 打开 HITL 审批弹层 |
-| 证据不足 / 工具失败 | 结果卡明确展示不足和下一步，不渲染虚假根因 |
+`POST /api/v1/runs/{run_id}/resume`
 
-## 兼容性要求
+```json
+{ "decision": "approve" }
+```
 
-- 保持 `run_id` 与 `thread_id` 的语义分离。
-- Tool request/response 必须脱敏并声明 `side_effect`。
-- Citation 必须携带文档 ID、chunk ID、score 与校验状态。
-- 网络失败时回退到 fixture，并清楚标注 Demo，而不是留下空面板。
+The backend checks that the run is actually waiting for approval. A rejected run performs no write. An approved run calls the Mock ERP ticket endpoint with the `run_id` as the idempotency key.
+
+## Failure behavior
+
+If a configured Agent API cannot be reached, the frontend displays a visible warning and switches to the deterministic fixture. It never labels fixture content as a live run.

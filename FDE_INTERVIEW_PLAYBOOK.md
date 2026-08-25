@@ -27,7 +27,7 @@
 7. `create_ticket`：如需写操作，Graph 暂停并等待人工批准；
 8. Audit：保存安全摘要、工具结果、引用和人工决策供复盘。
 
-当前 Demo 使用确定性合成 fixture 驱动相同 UI 状态，目的是让面试官无需密钥或后端也能稳定走完整条链路。生产版会用 SSE 把真实 FastAPI / LangGraph 事件映射到同一状态模型。
+当前仓库同时支持两条路径：公开站点使用确定性 fixture，保证面试官无需密钥或后端也能体验；本地全栈会真实调用 FastAPI、LangGraph、知识检索和独立 Mock ERP REST API，并把 API 返回的检索、工具、事件和 HITL 状态映射到同一套 UI。
 
 ## 4. 这个项目能体现的 FDE 能力
 
@@ -47,25 +47,25 @@
 
 这不是对你个人经历的判断，而是项目本身相对完整 FDE 案例的差距。
 
-### 缺口 A：没有真实后端与模型调用
+### 缺口 A：后端已接通，但默认不使用外部模型
 
-当前版本证明了产品流程、状态模型和交互，不证明真实检索质量或模型鲁棒性。
+当前 deterministic + lexical 模式可以完整复现后端链路；配置 OpenAI-compatible endpoint 后也可进入模型 + vector 模式。但仓库没有保存真实模型密钥，也不能把 deterministic 结果当作模型效果。
 
 面试回答：
 
-> “我先把高价值 workflow 和证据展示做成确定性 vertical slice，降低演示风险。下一步按已有 API 契约接入 FastAPI / LangGraph，并保留 fixture 作为离线 fallback。”
+> “我把稳定展示与工程验证拆开：公开站点保留离线 fallback，本地全栈真实经过 FastAPI、LangGraph、检索与 Mock ERP；模型和检索 provider 可以分别切换。这样既不会伪装在线 AI，也能复现真实接口和 HITL。”
 
-建议补齐：实现一个最小真实路径，而不是一次性做全套。选择一个场景，接入 5–10 篇 Markdown、一个 embedding 模型、两个只读 Mock ERP 工具和 SSE。
+建议补齐：选择一个模型供应商跑独立评测，重点记录结构化输出失败、错误高置信、工具选择和引用忠实度，不追求只展示最好分数。
 
 ### 缺口 B：评测指标仍是 baseline 展示
 
-目前的 54 cases 与 91.18% 不是生产模型指标。
+目前的 54 cases 与100%各项结果是 deterministic baseline，不是生产模型指标。
 
 面试回答：
 
 > “这些数字只描述仓库内 deterministic baseline。我不会把它们包装成模型准确率。真实版本会分别评估检索 recall@k、引用有效率、根因分类、工具选择、拒答和端到端任务成功率。”
 
-建议补齐：准备 20–30 条带 ground truth 的案例和一页评测结果，包含失败样本分析。
+建议补齐：在现有54条 ground truth 上增加歧义、冲突、工具超时、Prompt Injection 和应拒答样本，并单独报告模型模式。
 
 ### 缺口 C：缺少真实企业身份与数据治理
 
@@ -85,7 +85,7 @@ FDE 不只是工程实现，还要证明需求发现和上线采用。
 
 ## 6. 60 秒项目介绍
 
-> “我做的是一个 Enterprise Support Copilot，目标是帮助 ERP 支持团队更快且更可信地定位报销、权限、凭证和接口问题。和普通聊天机器人不同，它不会只生成答案，而是先检索企业制度，再通过受控的只读工具查询系统事实，然后用 evidence guard 检查每个关键结论是否被本次证据支持。最终输出结构化根因、风险和处理步骤；如果需要创建工单等写操作，工作流会暂停并要求人工确认。当前作品是确定性合成 Demo，重点验证产品流程、可观察性、安全边界和交互；真实后端可按已有 SSE/API 契约替换 fixture。这体现了我把模糊客户问题转成可部署、可评测、可治理方案的思路。”
+> “我做的是一个 Enterprise Support Copilot，目标是帮助 ERP 支持团队更快且更可信地定位报销、权限、凭证和接口问题。它先检索企业制度，再通过受控只读工具查询系统事实，并用 evidence guard 检查引用和工具证据是否来自本次运行。最终输出结构化根因、风险和处理步骤；需要创建工单时，LangGraph 会暂停并等待人工决定。项目有可离线演示的前端，也有已经接通的 FastAPI、LangGraph、检索、Mock ERP 和54条评测链路。所有数据都是合成的，基线结果不代表生产模型准确率。”
 
 ## 7. 3–5 分钟演示顺序
 
@@ -99,7 +99,7 @@ FDE 不只是工程实现，还要证明需求发现和上线采用。
 
 - Trace 展示安全节点摘要，不展示私有推理；
 - Tool 展示 REST request/response、延迟、重试和 `side_effect: false`；
-- Knowledge 展示 chunk、hybrid retrieval、rerank 和 citation validation。
+- Knowledge 展示 chunk、检索分数和 citation validation；说明 lexical 与 vector 模式的边界。
 
 ### 1:20–2:20 运行一个场景
 
@@ -111,7 +111,7 @@ FDE 不只是工程实现，还要证明需求发现和上线采用。
 
 ### 3:00–4:00 工程视图
 
-解释 React UI、Agent API、RAG 和 ERP Tool Gateway 四层；指出当前 fixture 与未来 SSE 事件使用同一 schema。
+解释 React UI、Agent API、RAG 和 ERP Tool Gateway 四层；指出 fixture 与真实 JSON API 使用同一状态模型。
 
 ### 4:00–5:00 评测与取舍
 
@@ -165,7 +165,7 @@ Chatbot 优化的是自然语言回答；这个场景需要状态、工具、证
 
 #### Q11：真实后端如何接入？
 
-`POST /api/runs` 创建 run，前端通过 SSE 订阅节点事件；每个事件包含 node、status、latency、safe_summary、tool_calls 和 citations。Graph interrupt 时调用 approval API，前端 fixture 继续作为离线 fallback。
+`POST /api/v1/chat/invoke` 创建 run 并返回诊断、检索、工具和安全事件；Graph interrupt 后通过 `POST /api/v1/runs/{run_id}/resume` 提交 approve/reject。当前版本是同步 JSON，若真实模型延迟增长，再把事件层升级为 SSE，而不改变领域响应结构。
 
 #### Q12：为什么区分 run_id 和 thread_id？
 
@@ -199,9 +199,9 @@ Chatbot 优化的是自然语言回答；这个场景需要状态、工具、证
 
 ### 评测与可观测性
 
-#### Q19：91.18% 代表什么？
+#### Q19：当前100%代表什么？
 
-只代表当前 deterministic baseline 的 Retrieval hit@3，不是生产模型准确率。它不能证明根因判断、工具选择、安全拒答或业务价值。
+只代表54条人工标注合成案例在 deterministic baseline-v2 上的分类、工具选择、Retrieval hit@3、升级判断、引用和证据引用校验结果。它不代表生产模型准确率，也不能证明真实故障解决率或业务价值。
 
 #### Q20：你会如何设计评测集？
 
@@ -227,7 +227,7 @@ V4 首次部署构建成功，但线上返回 Cloudflare Error 1101。Worker 日
 
 #### Q25：为什么现在选择中国境内静态部署？
 
-HR 访问是当前真实约束。Demo 无后端依赖，静态导出能消除跨境域名、Worker 运行时和外部字体风险，是最小复杂度的交付方案；真实 API 模式可在后续单独部署。
+HR 访问是当前真实约束。公开 Demo 保持静态可用，消除模型密钥、后端故障和跨境依赖；工程验证使用独立部署或本地运行的 API。两条路径在界面上必须清楚标识，不能把 fallback 说成 live run。
 
 #### Q26：如何扩展到高并发？
 
@@ -235,7 +235,7 @@ HR 访问是当前真实约束。Demo 无后端依赖，静态导出能消除跨
 
 #### Q27：最大技术债是什么？
 
-当前所有产品逻辑和 fixture 集中在一个较大的前端组件中，适合快速 vertical slice，但生产化应拆分 domain types、scenario fixtures、state reducer、evidence components 和 API client，并增加端到端浏览器测试。
+当前 API client 已从页面组件拆出，但 UI、fixture 和状态管理仍集中在较大的 `SupportConsole.tsx`。下一步应拆分 domain types、scenario fixtures、state reducer 和 evidence components，并增加真实浏览器端到端测试。
 
 ### FDE 交付与沟通
 
@@ -257,16 +257,16 @@ HR 访问是当前真实约束。Demo 无后端依赖，静态导出能消除跨
 
 > “我负责问题定义、场景与信息架构、风险边界、验收标准和演示叙事，并使用 AI coding agent 加速实现。我逐项审阅交互、测试构建、分析线上日志并推动修复。哪些代码由工具生成、哪些决策由我做，我可以清楚说明。”
 
-不要声称所有代码都是手写，也不要把尚未实现的 FastAPI、LangGraph 或真实 RAG 描述成已上线。
+不要声称所有代码都是手写，也不要把“仓库中已经实现的全栈能力”描述成“已经接入生产 ERP 或真实客户上线”。
 
 #### Q32：如果再给你一周，你会做什么？
 
-优先完成一个真实 vertical slice：一个场景、少量知识文档、两个只读工具、SSE 事件、20 条评测和一页失败分析；再补 OIDC/RBAC 威胁模型和中国大陆稳定部署。不会先扩展更多 UI 场景。
+优先用真实模型跑一组包含失败样本的独立评测，补 OIDC/RBAC 与审批身份威胁模型，并把 Agent API 部署到安全后端供公开 Demo 切换。不会先扩展更多 UI 场景。
 
 ## 9. 容易失分的说法
 
-- “这是一个全栈生产 Agent。”——当前不是。
-- “91.18% 是模型准确率。”——这是 Retrieval hit@3 baseline。
+- “这是一个全栈生产 Agent。”——这是可复现的全栈作品，不是生产系统。
+- “100% 是模型准确率。”——这是合成评测集上的 deterministic baseline。
 - “有人工确认，所以写操作安全。”——前端确认不是安全边界。
 - “RAG 能解决幻觉。”——只能提供证据，仍需校验、拒答和评测。
 - “Agent 会自己选择任何工具。”——生产环境应使用 allowlist、策略和最小权限。
@@ -294,4 +294,3 @@ HR 访问是当前真实约束。Demo 无后端依赖，静态导出能消除跨
 ## 12. 下一轮定制所需输入
 
 要把这份通用手册变成高命中版本，请补充：目标公司与 JD、面试轮次、面试语言、你的简历、你真实负责过的 2–3 个项目，以及最担心的技术或行为问题。
-

@@ -1,0 +1,6 @@
+[
+  {"log_id":"IF-001","claim_id":"CLM-2026-007","interface":"ATTACHMENT_SYNC","status":"ERROR","error_code":"HTTP_504","message":"对象存储网关超时","occurred_at":"2026-08-07T15:30:12Z","retry_count":3,"correlation_id":"CORR-7001"},
+  {"log_id":"IF-002","claim_id":"CLM-2026-007","interface":"ERP_POSTING","status":"SUCCESS","error_code":null,"message":"凭证同步成功","occurred_at":"2026-08-07T15:29:02Z","retry_count":0,"correlation_id":"CORR-7002"},
+  {"log_id":"IF-003","claim_id":"CLM-2026-006","interface":"PAYMENT_STATUS","status":"SUCCESS","error_code":null,"message":"付款状态回写成功","occurred_at":"2026-08-06T11:03:02Z","retry_count":0,"correlation_id":"CORR-6001"},
+  {"log_id":"IF-004","claim_id":null,"interface":"MASTER_DATA_SYNC","status":"ERROR","error_code":"SCHEMA_VALIDATION","message":"成本中心字段为空，记录U1004被拒绝","occurred_at":"2026-08-04T02:00:00Z","retry_count":1,"correlation_id":"CORR-MD-1004"}
+]

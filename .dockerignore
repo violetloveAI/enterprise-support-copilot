@@ -1,0 +1,9 @@
+.git
+.next
+.sites-runtime
+node_modules
+out
+backend
+runtime
+*.log
+.env*

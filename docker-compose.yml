@@ -1,0 +1,56 @@
+services:
+  mock-erp:
+    build:
+      context: backend
+      dockerfile: services/mock_erp/Dockerfile
+    environment:
+      ERP_DB_PATH: /app/runtime/erp.db
+    volumes:
+      - runtime-data:/app/runtime
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agent-api:
+    build:
+      context: backend
+      dockerfile: services/agent_api/Dockerfile
+    environment:
+      LLM_PROVIDER: deterministic
+      RETRIEVAL_PROVIDER: lexical
+      MOCK_ERP_BASE_URL: http://mock-erp:8001
+      COPILOT_DB_PATH: /app/runtime/copilot.db
+      CHROMA_PATH: /app/runtime/chroma
+      KNOWLEDGE_BASE_PATH: /app/knowledge_base
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - runtime-data:/app/runtime
+    depends_on:
+      mock-erp:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_AGENT_API_URL: http://localhost:8000
+    depends_on:
+      agent-api:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+
+volumes:
+  runtime-data:

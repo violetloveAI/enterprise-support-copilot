@@ -10,7 +10,7 @@
 
 选择“公司范围 500”并开始诊断。随着进度推进，解释六个节点：问题理解、知识检索、工具规划、只读查询、证据校验和答案生成。
 
-打开 `execute_tools`，说明前端只展示安全的输入/输出和审计摘要，不展示模型私有推理。再打开工具详情，指出 REST 边界、200 状态、延迟、零重试与 `side_effect: false`。打开知识来源，说明 hybrid retrieval、rerank 分数和 citation validation 如何支持最终结论。
+打开 `execute_tools`，说明前端只展示安全的输入/输出和审计摘要，不展示模型私有推理。再打开工具详情，指出 REST 边界、200 状态、延迟、零重试与 `side_effect: false`。打开知识来源，说明当前 lexical/vector 模式、检索分数和 citation validation 如何支持最终结论。
 
 ## 60 秒：Human-in-the-loop
 
@@ -26,7 +26,7 @@
 
 ## 可追问点
 
-- 评测：54 条 ground truth 是 deterministic baseline，不把它包装成生产准确率。
+- 评测：54 条 ground truth 的100%结果是 deterministic baseline，不把它包装成生产模型准确率。
 - 安全：默认只读；写操作需要 HITL；运行记录支持审计和复盘。
 - 可演进性：通过 typed API/SSE 把事件流替换为真实 LangGraph 执行，UI 状态模型不需要重写。
 - 失败策略：检索为空、工具超时或引用失效时，返回证据不足，而不是编造根因。

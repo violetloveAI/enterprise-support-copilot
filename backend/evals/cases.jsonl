@@ -1,0 +1,54 @@
+{"case_id":"OP-01","question":"报销单怎么新建和保存草稿？","expected_category":"operation","expected_tools":[],"expected_docs":["KB-001"],"expected_escalation":false}
+{"case_id":"OP-02","question":"提交报销之前需要检查哪些内容？","expected_category":"operation","expected_tools":[],"expected_docs":["KB-001"],"expected_escalation":false}
+{"case_id":"OP-03","question":"DRAFT 状态是什么意思？","expected_category":"operation","expected_tools":[],"expected_docs":["KB-002"],"expected_escalation":false}
+{"case_id":"OP-04","question":"CLM-2026-001 现在是什么状态？","expected_category":"operation","expected_tools":["get_claim_status"],"expected_docs":["KB-002"],"expected_escalation":false}
+{"case_id":"OP-05","question":"审批完成是不是就代表已经付款？","expected_category":"approval","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"OP-06","question":"已经提交的单据如何撤回？","expected_category":"operation","expected_tools":[],"expected_docs":["KB-001"],"expected_escalation":false}
+{"case_id":"OP-07","question":"页面提示系统繁忙，我能连续点提交吗？","expected_category":"operation","expected_tools":[],"expected_docs":["KB-011"],"expected_escalation":false}
+{"case_id":"OP-08","question":"报销单 CLM-2026-006 是否已经付款？","expected_category":"operation","expected_tools":["get_claim_status"],"expected_docs":["KB-002","KB-011"],"expected_escalation":false}
+{"case_id":"OP-09","question":"我的单据状态不对，帮我看看","expected_category":"operation","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"PERM-01","question":"用户 U1002 提交差旅报销时提示没有权限","expected_category":"permission","expected_tools":["get_user_permissions"],"expected_docs":["KB-003","KB-004"],"expected_escalation":true}
+{"case_id":"PERM-02","question":"U1005 有财务审核角色但账号锁定，为什么不能审批？","expected_category":"permission","expected_tools":["get_user_permissions"],"expected_docs":["KB-003","KB-004"],"expected_escalation":true}
+{"case_id":"PERM-03","question":"用户 U1001 有哪些报销角色？","expected_category":"permission","expected_tools":["get_user_permissions"],"expected_docs":["KB-004"],"expected_escalation":true}
+{"case_id":"PERM-04","question":"CLM-2026-002 无法提交，申请人 U1002 是否缺权限？","expected_category":"permission","expected_tools":["get_user_permissions","get_claim_status"],"expected_docs":["KB-003"],"expected_escalation":true}
+{"case_id":"PERM-05","question":"为什么我看不到差旅报销按钮？","expected_category":"permission","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"PERM-06","question":"用户 U1003 的报销角色范围是否匹配公司代码？","expected_category":"permission","expected_tools":["get_user_permissions"],"expected_docs":["KB-003","KB-004"],"expected_escalation":true}
+{"case_id":"PERM-07","question":"可以借同事账号提交报销来绕过角色限制吗？","expected_category":"permission","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"PERM-08","question":"U1006 突然没有普通报销权限了，帮我核实角色","expected_category":"permission","expected_tools":["get_user_permissions"],"expected_docs":["KB-003","KB-004"],"expected_escalation":true}
+{"case_id":"PERM-09","question":"权限有问题，系统不让我提交","expected_category":"permission","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"APR-01","question":"CLM-2026-003 审批卡在哪里了？","expected_category":"approval","expected_tools":["get_claim_status","get_approval_flow"],"expected_docs":["KB-005","KB-006"],"expected_escalation":true}
+{"case_id":"APR-02","question":"报销单 CLM-2026-005 的审批是否完成？","expected_category":"approval","expected_tools":["get_claim_status","get_approval_flow"],"expected_docs":["KB-005"],"expected_escalation":false}
+{"case_id":"APR-03","question":"CLM-2026-008 为什么被驳回？","expected_category":"approval","expected_tools":["get_claim_status","get_approval_flow"],"expected_docs":["KB-005"],"expected_escalation":false}
+{"case_id":"APR-04","question":"审批人休假时如何设置代理审批？","expected_category":"approval","expected_tools":[],"expected_docs":["KB-006"],"expected_escalation":false}
+{"case_id":"APR-05","question":"审批卡住了，需要转派待办","expected_category":"approval","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"APR-06","question":"CLM-2026-001 为什么还没有进入审批？","expected_category":"approval","expected_tools":["get_claim_status","get_approval_flow"],"expected_docs":["KB-005"],"expected_escalation":false}
+{"case_id":"APR-07","question":"CLM-2026-003 当前审批人账号是否可能锁定？","expected_category":"approval","expected_tools":["get_claim_status","get_approval_flow"],"expected_docs":["KB-005","KB-006"],"expected_escalation":true}
+{"case_id":"APR-08","question":"超过5000元业务招待费会走哪些审批节点？","expected_category":"approval","expected_tools":[],"expected_docs":["KB-005"],"expected_escalation":false}
+{"case_id":"APR-09","question":"我的审批一直没动，请处理","expected_category":"approval","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"MD-01","question":"U1004 的成本中心主数据是否为空？","expected_category":"master_data","expected_tools":["get_user_permissions"],"expected_docs":["KB-007"],"expected_escalation":true}
+{"case_id":"MD-02","question":"CLM-2026-004 提示成本中心为空，原因是什么？","expected_category":"master_data","expected_tools":["get_claim_status"],"expected_docs":["KB-007"],"expected_escalation":true}
+{"case_id":"MD-03","question":"用户 U1003 的公司代码和组织信息是什么？","expected_category":"master_data","expected_tools":["get_user_permissions"],"expected_docs":["KB-007"],"expected_escalation":true}
+{"case_id":"MD-04","question":"成本中心必须和员工公司代码匹配吗？","expected_category":"master_data","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"MD-05","question":"银行信息缺失会影响报销吗？","expected_category":"master_data","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"MD-06","question":"CLM-2026-004 的主数据校验为什么失败？","expected_category":"master_data","expected_tools":["get_claim_status"],"expected_docs":["KB-007"],"expected_escalation":true}
+{"case_id":"MD-07","question":"U1001 的成本中心和公司代码是否完整？","expected_category":"master_data","expected_tools":["get_user_permissions"],"expected_docs":["KB-007"],"expected_escalation":true}
+{"case_id":"MD-08","question":"能不能临时填写别人的成本中心来通过校验？","expected_category":"master_data","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"MD-09","question":"主数据好像有问题，帮我修一下","expected_category":"master_data","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"VCH-01","question":"CLM-2026-005 为什么凭证生成失败？","expected_category":"voucher_config","expected_tools":["get_claim_status","get_voucher_status"],"expected_docs":["KB-008","KB-009"],"expected_escalation":true}
+{"case_id":"VCH-02","question":"CLM-2026-006 的凭证是否已经过账？","expected_category":"voucher_config","expected_tools":["get_claim_status","get_voucher_status"],"expected_docs":["KB-008"],"expected_escalation":true}
+{"case_id":"VCH-03","question":"FI_PERIOD_CLOSED 是什么意思？","expected_category":"voucher_config","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"VCH-04","question":"出现科目映射缺失应该谁处理？","expected_category":"voucher_config","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"VCH-05","question":"凭证失败了，帮我查一下","expected_category":"voucher_config","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"VCH-06","question":"CLM-2026-007 已经生成凭证了吗？","expected_category":"voucher_config","expected_tools":["get_claim_status","get_voucher_status"],"expected_docs":["KB-008"],"expected_escalation":true}
+{"case_id":"VCH-07","question":"财务期间未开放时可以反复重试过账吗？","expected_category":"voucher_config","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"VCH-08","question":"税码与公司代码不兼容会导致什么凭证错误？","expected_category":"voucher_config","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"VCH-09","question":"CLM-2026-005 报错 FI_PERIOD_CLOSED，请诊断","expected_category":"voucher_config","expected_tools":["get_claim_status","get_voucher_status"],"expected_docs":["KB-008","KB-009"],"expected_escalation":true}
+{"case_id":"IF-01","question":"CLM-2026-007 附件同步接口为什么失败？","expected_category":"interface_system","expected_tools":["get_claim_status","get_interface_log"],"expected_docs":["KB-010"],"expected_escalation":true}
+{"case_id":"IF-02","question":"CLM-2026-007 的接口日志里有 HTTP_504 吗？","expected_category":"interface_system","expected_tools":["get_claim_status","get_interface_log"],"expected_docs":["KB-010"],"expected_escalation":true}
+{"case_id":"IF-03","question":"接口 HTTP_504 已经重试三次，下一步怎么办？","expected_category":"interface_system","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"IF-04","question":"SCHEMA_VALIDATION 接口错误可以直接重试吗？","expected_category":"interface_system","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"IF-05","question":"系统接口异常了，帮我看看日志","expected_category":"interface_system","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"IF-06","question":"CLM-2026-006 的付款状态同步是否成功？","expected_category":"interface_system","expected_tools":["get_claim_status","get_interface_log"],"expected_docs":["KB-010"],"expected_escalation":false}
+{"case_id":"IF-07","question":"CLM-2026-007 的凭证同步和附件同步是否是同一个故障？","expected_category":"interface_system","expected_tools":["get_claim_status","get_interface_log"],"expected_docs":["KB-010"],"expected_escalation":true}
+{"case_id":"IF-08","question":"AUTH_EXPIRED 会对接口造成什么影响？","expected_category":"interface_system","expected_tools":[],"expected_docs":[],"expected_escalation":false}
+{"case_id":"IF-09","question":"CLM-2026-007 系统超时，请提供 correlation ID","expected_category":"interface_system","expected_tools":["get_claim_status","get_interface_log"],"expected_docs":["KB-010"],"expected_escalation":true}

@@ -29,6 +29,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!backend/.env.example
 
 # vercel
 .vercel
@@ -41,6 +42,13 @@ next-env.d.ts
 /outputs/
 /work/
 /fullstack-source/
+/backend/.venv/
+/backend/runtime/
+/backend/.pytest_cache/
+/backend/.ruff_cache/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
 
 # Tencent Cloud EdgeOne
 .env
@@ -50,4 +58,3 @@ next-env.d.ts
 # runtime / build caches (regenerated; not source)
 .tmp/
 .vinext/
-  

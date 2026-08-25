@@ -7,6 +7,12 @@ import {
   TicketCheck, Wrench, X, Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  hasConfiguredApi,
+  invokeDiagnosis,
+  resumeDiagnosis,
+  type ApiRunResponse,
+} from "./support-api";
 
 type View = "workbench" | "runs" | "engineering";
 type DetailTab = "trace" | "tools" | "knowledge";
@@ -20,6 +26,10 @@ type Scenario = {
   duration: string; rootCause: string; evidence: string; needsApproval: boolean;
   steps: string[]; sources: { id: string; title: string; score: number; excerpt: string }[];
   tools: { name: string; latency: number; request: string; response: string }[];
+  trace?: TraceEvent[];
+  runtime?: "fixture" | "api";
+  retrievalLabel?: string;
+  ticketId?: string;
 };
 
 const scenarios: Scenario[] = [
@@ -110,6 +120,7 @@ function getRunId(id: string) {
 }
 
 function getTraceEvents(scenario: Scenario): TraceEvent[] {
+  if (scenario.trace?.length) return scenario.trace;
   return [
     {
       node: "analyze_query", label: "理解问题", caption: `识别 ${scenario.claim} · ${scenario.category}`,
@@ -138,6 +149,67 @@ function getTraceEvents(scenario: Scenario): TraceEvent[] {
   ];
 }
 
+const eventLabels: Record<string, [string, string]> = {
+  analyze: ["理解问题", "结构化问题与业务实体"],
+  clarify: ["补充信息", "检测必要字段是否缺失"],
+  retrieve: ["检索知识", "召回可引用的制度与手册"],
+  plan_tools: ["规划工具", "只选择必要的只读 ERP 工具"],
+  execute_tools: ["执行查询", "通过 REST 边界读取合成 ERP"],
+  diagnose: ["生成诊断", "证据校验、风险判断与处置建议"],
+  approval: ["人工审批", "写操作前暂停并等待明确决策"],
+};
+
+function scenarioFromApi(run: ApiRunResponse, fallback: Scenario): Scenario {
+  const diagnosis = run.diagnosis;
+  if (!diagnosis) return fallback;
+  const riskMap = { low: "低风险", medium: "中风险", high: "高风险" } as const;
+  const toolLatency = new Map(
+    run.events
+      .filter((event) => event.event_type === "tool_result")
+      .map((event) => [String(event.details.tool_name ?? ""), event.duration_ms ?? 0]),
+  );
+  const durationMs = run.events.reduce((sum, event) => sum + (event.duration_ms ?? 0), 0);
+  const trace = run.events
+    .filter((event) => event.node_name && event.node_name !== "invoke")
+    .map((event) => {
+      const [label, caption] = eventLabels[event.node_name] ?? [event.node_name, event.event_type];
+      return {
+        node: `${event.node_name}:${event.sequence}`,
+        label,
+        caption,
+        latency: event.duration_ms ?? 0,
+        output: JSON.stringify(event.details, null, 2),
+      };
+    });
+  return {
+    ...fallback,
+    category: diagnosis.category_label,
+    risk: riskMap[diagnosis.risk_level],
+    confidence: Math.round(diagnosis.confidence * 100),
+    duration: `${Math.max(durationMs, 1)}ms`,
+    rootCause: diagnosis.possible_causes[0] ?? diagnosis.uncertainty_statement ?? "证据不足，无法确认根因。",
+    evidence: diagnosis.evidence.map((item) => item.statement).join("；") || diagnosis.uncertainty_statement || "当前没有可验证的工具证据。",
+    needsApproval: diagnosis.escalation_required,
+    steps: diagnosis.troubleshooting_steps,
+    sources: run.retrieved_sources.map((source) => ({
+      id: source.chunk_id,
+      title: source.title,
+      score: Math.round(source.score * 100),
+      excerpt: source.content,
+    })),
+    tools: run.tool_calls.map((tool) => ({
+      name: tool.tool_name,
+      latency: toolLatency.get(tool.tool_name) ?? 0,
+      request: JSON.stringify(tool.arguments),
+      response: JSON.stringify(tool.ok ? tool.result : { error: tool.error }),
+    })),
+    trace,
+    runtime: "api",
+    retrievalLabel: run.retrieval_provider === "vector" ? "Vector retrieval" : "Lexical retrieval",
+    ticketId: run.ticket && typeof run.ticket.ticket_id === "string" ? run.ticket.ticket_id : undefined,
+  };
+}
+
 function prettyJson(value: string) {
   try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
 }
@@ -156,9 +228,16 @@ export default function SupportConsole() {
   const [ticketStatus, setTicketStatus] = useState<"idle" | "created" | "rejected">("idle");
   const [checkedSteps, setCheckedSteps] = useState<number[]>([]);
   const [copied, setCopied] = useState(false);
+  const [runResponse, setRunResponse] = useState<ApiRunResponse | null>(null);
+  const [runtimeMode, setRuntimeMode] = useState<"fixture" | "configured" | "api" | "fallback">(
+    hasConfiguredApi() ? "configured" : "fixture",
+  );
+  const [runError, setRunError] = useState<string | null>(null);
+  const [approvalPending, setApprovalPending] = useState(false);
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const scenario = scenarios.find((item) => item.id === scenarioId) ?? scenarios[0];
-  const runId = getRunId(scenario.id);
+  const baseScenario = scenarios.find((item) => item.id === scenarioId) ?? scenarios[0];
+  const scenario = runResponse ? scenarioFromApi(runResponse, baseScenario) : baseScenario;
+  const runId = runResponse?.run_id ?? getRunId(scenario.id);
 
   useEffect(() => {
     let disposed = false;
@@ -272,26 +351,83 @@ export default function SupportConsole() {
 
   function reset() {
     stopTimers(); setView("workbench"); setRunState("idle"); setStage(0); setQuery("");
-    setTicketStatus("idle"); setCheckedSteps([]); setDetailTab("trace");
+    setTicketStatus("idle"); setCheckedSteps([]); setDetailTab("trace"); setRunResponse(null);
+    setRunError(null); setRuntimeMode(hasConfiguredApi() ? "configured" : "fixture");
   }
 
   function selectScenario(item: Scenario) {
     stopTimers(); setScenarioId(item.id); setQuery(item.question); setRunState("idle");
     setStage(0); setTicketStatus("idle"); setCheckedSteps([]); setView("workbench");
+    setRunResponse(null); setRunError(null);
   }
 
   function openCompleted(item: Scenario) {
     stopTimers(); setScenarioId(item.id); setQuery(item.question); setRunState("complete");
     setStage(traceStages.length); setTicketStatus("idle"); setCheckedSteps([]); setView("workbench");
+    setRunResponse(null); setRunError(null);
   }
 
-  function startRun() {
+  function scheduleProgress() {
+    traceStages.forEach((_, index) => {
+      timers.current.push(setTimeout(() => setStage(index + 1), 650 * (index + 1)));
+    });
+  }
+
+  function completeFixture() {
+    stopTimers(); setStage(traceStages.length); setRunState("complete");
+  }
+
+  async function startRun() {
     if (!query.trim()) return;
     stopTimers(); setRunState("running"); setStage(0); setTicketStatus("idle"); setDetailTab("trace");
-    traceStages.forEach((_, index) => {
-      timers.current.push(setTimeout(() => setStage(index + 1), 520 * (index + 1)));
-    });
-    timers.current.push(setTimeout(() => setRunState("complete"), 520 * traceStages.length + 500));
+    setRunResponse(null); setRunError(null); scheduleProgress();
+    if (!hasConfiguredApi()) {
+      timers.current.push(setTimeout(completeFixture, 650 * traceStages.length + 450));
+      return;
+    }
+    try {
+      const response = await invokeDiagnosis(query.trim());
+      if (response.clarification_question) {
+        stopTimers(); setRunState("idle"); setStage(0);
+        setModal({
+          title: "需要补充信息",
+          subtitle: "Agent 拒绝猜测缺失的业务标识",
+          body: response.clarification_question,
+        });
+        return;
+      }
+      stopTimers(); setRunResponse(response); setRuntimeMode("api");
+      setStage(Math.max(response.events.length, traceStages.length)); setRunState("complete");
+    } catch (error) {
+      setRuntimeMode("fallback");
+      setRunError(error instanceof Error ? error.message : "Agent API 暂时不可用");
+      timers.current.push(setTimeout(completeFixture, 700));
+    }
+  }
+
+  async function decideApproval(decision: "approve" | "reject") {
+    if (!runResponse || !hasConfiguredApi()) {
+      setTicketStatus(decision === "approve" ? "created" : "rejected");
+      setApprovalOpen(false);
+      return;
+    }
+    setApprovalPending(true);
+    try {
+      const response = await resumeDiagnosis(runResponse.run_id, decision);
+      setRunResponse(response);
+      setTicketStatus(decision === "approve" ? "created" : "rejected");
+      setApprovalOpen(false);
+    } catch (error) {
+      setModal({
+        title: "审批操作未完成",
+        subtitle: "Agent API 返回错误",
+        body: error instanceof Error ? error.message : "请检查后端服务后重试。",
+        code: true,
+      });
+      setApprovalOpen(false);
+    } finally {
+      setApprovalPending(false);
+    }
   }
 
   function showTool(tool: Scenario["tools"][number]) {
@@ -299,11 +435,11 @@ export default function SupportConsole() {
   }
 
   function showSource(source: Scenario["sources"][number]) {
-    setModal({ title: source.title, subtitle: `${source.id} · enterprise-kb · relevance ${source.score}%`, body: `文档片段\n${source.excerpt}\n\n检索元数据\nchunk_id: ${source.id}-chunk-02\nretrieval: hybrid (BM25 + vector)\nrerank_score: ${source.score / 100}\ncitation_validated: true\n\n该片段来自 synthetic enterprise documentation，仅用于作品集演示。` });
+    setModal({ title: source.title, subtitle: `${source.id} · enterprise-kb · relevance ${source.score}%`, body: `文档片段\n${source.excerpt}\n\n检索元数据\nchunk_id: ${source.id}\nretrieval: ${scenario.retrievalLabel ?? "deterministic evidence retrieval"}\nscore: ${source.score / 100}\ncitation_validated: true\n\n该片段来自 synthetic enterprise documentation，仅用于作品集演示。` });
   }
 
   function showTrace(event: TraceEvent, index: number) {
-    setModal({ title: event.label, subtitle: `${event.node} · step ${index + 1}/6 · ${event.latency} ms`, code: true, body: `NODE\n${event.node}\n\nINPUT\nrun_id: ${runId}\nthread_id: THREAD-${runId.slice(-6)}\nscenario: ${scenario.id}\n\nOUTPUT\n${event.output}\n\nOBSERVABILITY\nstatus: succeeded\nlatency_ms: ${event.latency}\ntrace_level: safe_summary` });
+    setModal({ title: event.label, subtitle: `${event.node} · step ${index + 1}/${getTraceEvents(scenario).length} · ${event.latency} ms`, code: true, body: `NODE\n${event.node}\n\nINPUT\nrun_id: ${runId}\nthread_id: ${runResponse?.thread_id ?? `THREAD-${runId.slice(-6)}`}\nscenario: ${scenario.id}\n\nOUTPUT\n${event.output}\n\nOBSERVABILITY\nstatus: succeeded\nlatency_ms: ${event.latency}\ntrace_level: safe_summary` });
   }
 
   async function copyText(text: string) {
@@ -337,18 +473,19 @@ export default function SupportConsole() {
             </button>
           ))}
         </div>
-        <div className="service-status"><i /><span><strong>Agent 服务正常</strong><small>Synthetic sandbox</small></span></div>
+        <div className="service-status"><i /><span><strong>{runtimeMode === "api" ? "Agent API 已连接" : runtimeMode === "fallback" ? "离线回放模式" : runtimeMode === "configured" ? "Agent API 已配置" : "演示快照模式"}</strong><small>Synthetic sandbox</small></span></div>
       </aside>
 
       <div className="app-stage">
         <header className="app-header">
           <div><strong>{view === "workbench" ? "诊断工作台" : view === "runs" ? "运行记录" : "工程视图"}</strong><small>Expense ERP · Portfolio Demo</small></div>
-          <div className="header-badges"><span><i /> DEMO 环境</span><b>FDE</b></div>
+          <div className="header-badges"><span><i /> {runtimeMode === "api" ? "FULL STACK" : "DEMO 环境"}</span><b>FDE</b></div>
         </header>
 
         {view === "workbench" && (
           <div className="workbench-grid">
             <main className="workbench-main">
+              {runError && <div className="runtime-alert" role="status"><ShieldCheck size={16} /><span><strong>真实后端暂时不可用，已切换到离线演示。</strong><small>{runError}</small></span></div>}
               {runState === "idle" ? (
                 <Landing query={query} setQuery={setQuery} onStart={startRun} onSelect={selectScenario} />
               ) : (
@@ -363,7 +500,7 @@ export default function SupportConsole() {
             <EvidencePanel
               scenario={scenario} runId={runId} runState={runState} stage={stage}
               activeTab={detailTab} setActiveTab={setDetailTab} onTrace={showTrace} onTool={showTool} onSource={showSource}
-              onJson={() => setModal({ title: "结构化输出 JSON", subtitle: "FastAPI response · application/json", code: true, body: JSON.stringify({
+              onJson={() => setModal({ title: "结构化输出 JSON", subtitle: `${scenario.runtime === "api" ? "Actual FastAPI response" : "Deterministic fixture"} · application/json`, code: true, body: JSON.stringify(runResponse ?? {
                 run_id: runId, category: scenario.category, confidence: scenario.confidence / 100,
                 selected_tools: scenario.tools.map((tool) => tool.name), retrieved_docs: scenario.sources.map((source) => source.id),
                 risk: scenario.risk, escalation_required: scenario.needsApproval, grounded: true,
@@ -389,8 +526,8 @@ export default function SupportConsole() {
             <p>这是一次写操作。Graph 已在 <code>create_ticket</code> 前暂停，只有你的明确批准才会继续执行。</p>
             <div className="approval-preview"><span>Action</span><code>create_ticket</code><span>Run</span><code>{runId}</code><span>Policy</span><code>REQUIRE_CONFIRM</code></div>
             <div className="modal-actions">
-              <button className="ghost-button" onClick={() => { setTicketStatus("rejected"); setApprovalOpen(false); }}>拒绝，不执行</button>
-              <button className="primary-action" onClick={() => { setTicketStatus("created"); setApprovalOpen(false); }}><Check size={16} />确认创建</button>
+              <button className="ghost-button" disabled={approvalPending} onClick={() => void decideApproval("reject")}>拒绝，不执行</button>
+              <button className="primary-action" disabled={approvalPending} onClick={() => void decideApproval("approve")}><Check size={16} />{approvalPending ? "处理中…" : "确认创建"}</button>
             </div>
           </section>
         </div>
@@ -448,11 +585,11 @@ function RunWorkspace(props: {
         <article className="diagnosis-card">
           <div className="diagnosis-hero"><div><span className="micro-label">根因判断</span><h2>{scenario.rootCause}</h2></div><span className={`risk-pill ${scenario.risk}`}>{scenario.risk}</span></div>
           <div className="metric-row"><div><span>问题分类</span><strong>{scenario.category}</strong></div><div><span>证据置信度</span><strong>{scenario.confidence}%</strong></div><div><span>运行耗时</span><strong>{scenario.duration}</strong></div></div>
-          <section className="diagnosis-section"><div className="subheading"><strong>诊断证据</strong><span>工具结果与知识交叉验证</span></div><button className="evidence-proof" onClick={() => onSource(scenario.sources[0])}><Check size={16} /><span>{scenario.evidence}</span><ChevronRight size={15} /></button></section>
-          <section className="diagnosis-section"><div className="subheading"><strong>建议处理步骤</strong><span>{checkedSteps.length}/3 已完成</span></div><div className="step-list">{scenario.steps.map((step, index) => <button className={checkedSteps.includes(index) ? "done" : ""} key={step} onClick={() => onToggleStep(index)}><span>{checkedSteps.includes(index) ? <Check size={14} /> : index + 1}</span><strong>{step}</strong></button>)}</div></section>
-          <section className="diagnosis-section"><div className="subheading"><strong>引用知识</strong><span>Retrieval hit@3</span></div><div className="source-cards">{scenario.sources.map((source) => <button key={source.id} onClick={() => onSource(source)}><span>{source.id}</span><strong>{source.title}</strong><small>{source.score}%</small></button>)}</div></section>
+          <section className="diagnosis-section"><div className="subheading"><strong>诊断证据</strong><span>工具结果与知识交叉验证</span></div>{scenario.sources[0] ? <button className="evidence-proof" onClick={() => onSource(scenario.sources[0])}><Check size={16} /><span>{scenario.evidence}</span><ChevronRight size={15} /></button> : <div className="evidence-proof"><ShieldCheck size={16} /><span>{scenario.evidence}</span></div>}</section>
+          <section className="diagnosis-section"><div className="subheading"><strong>建议处理步骤</strong><span>{checkedSteps.length}/{scenario.steps.length} 已完成</span></div><div className="step-list">{scenario.steps.map((step, index) => <button className={checkedSteps.includes(index) ? "done" : ""} key={step} onClick={() => onToggleStep(index)}><span>{checkedSteps.includes(index) ? <Check size={14} /> : index + 1}</span><strong>{step}</strong></button>)}</div></section>
+          <section className="diagnosis-section"><div className="subheading"><strong>引用知识</strong><span>{scenario.retrievalLabel ?? "Deterministic retrieval"}</span></div><div className="source-cards">{scenario.sources.map((source) => <button key={source.id} onClick={() => onSource(source)}><span>{source.id}</span><strong>{source.title}</strong><small>{source.score}%</small></button>)}</div></section>
           {scenario.needsApproval && ticketStatus === "idle" && <div className="escalation-card"><span><TicketCheck /></span><div><strong>建议升级人工支持</strong><p>涉及受控配置或高风险故障，创建工单需要人工确认。</p></div><button onClick={onApproval}>创建工单</button></div>}
-          {ticketStatus !== "idle" && <div className={`ticket-result ${ticketStatus}`}><span>{ticketStatus === "created" ? <Check /> : <X />}</span><div><strong>{ticketStatus === "created" ? "工单已创建" : "已拒绝写操作"}</strong><p>{ticketStatus === "created" ? "INC-2481 · 已使用 run_id 作为幂等键。" : "Graph 已结束，Mock ERP 未收到写入请求。"}</p></div></div>}
+          {ticketStatus !== "idle" && <div className={`ticket-result ${ticketStatus}`}><span>{ticketStatus === "created" ? <Check /> : <X />}</span><div><strong>{ticketStatus === "created" ? "工单已创建" : "已拒绝写操作"}</strong><p>{ticketStatus === "created" ? `${scenario.ticketId ?? "INC-2481"} · 已使用 run_id 作为幂等键。` : "Graph 已结束，Mock ERP 未收到写入请求。"}</p></div></div>}
         </article>
       </div>
     )}
@@ -494,15 +631,15 @@ function EvidencePanel(props: {
       ) : activeTab === "tools" ? (
         <div className="tool-list"><div className="panel-summary"><span>REST boundary</span><strong>{scenario.tools.length} 次只读调用</strong><small>0 retry · 0 side effect</small></div>{scenario.tools.map((tool) => { const available = isComplete || stage >= 4; return <button key={tool.name} disabled={!available} onClick={() => onTool(tool)}><span><Wrench /></span><div><strong>{tool.name}</strong><small>{available ? `200 OK · ${tool.latency} ms · READ ONLY` : "等待 execute_tools 节点"}</small></div><i className={available ? "ok" : ""}>{available ? "OK" : "—"}</i><ChevronRight /></button>; })}</div>
       ) : (
-        <div className="knowledge-list"><div className="panel-summary"><span>Hybrid retrieval</span><strong>Top {scenario.sources.length} 已通过引用校验</strong><small>collection: enterprise-kb</small></div>{scenario.sources.map((source, index) => { const available = isComplete || stage >= 2; return <button key={source.id} disabled={!available} onClick={() => onSource(source)}><span><BookOpen /></span><div><strong>{source.title}</strong><small>{source.id} · chunk-0{index + 1} · rerank {source.score / 100}</small><p>{source.excerpt}</p></div><i>{source.score}%</i><ChevronRight /></button>; })}</div>
+        <div className="knowledge-list"><div className="panel-summary"><span>{scenario.retrievalLabel ?? "Deterministic retrieval"}</span><strong>Top {scenario.sources.length} 已通过引用校验</strong><small>collection: enterprise-kb</small></div>{scenario.sources.map((source) => { const available = isComplete || stage >= 2; return <button key={source.id} disabled={!available} onClick={() => onSource(source)}><span><BookOpen /></span><div><strong>{source.title}</strong><small>{source.id} · score {source.score / 100}</small><p>{source.excerpt}</p></div><i>{source.score}%</i><ChevronRight /></button>; })}</div>
       )}
     </div>
-    <div className="evidence-footer"><button onClick={onJson} disabled={!isComplete}><span><Braces /></span><div><strong>结构化输出</strong><small>{isSnapshot ? "查看该快照的 API JSON" : "查看 API JSON 响应"}</small></div><ChevronRight /></button><div className="eval-mini"><span><strong>54</strong><small>Eval cases</small></span><span><strong>91.18%</strong><small>Retrieval hit@3</small></span></div><p>deterministic baseline · synthetic demo · 2026-08-13</p></div>
+    <div className="evidence-footer"><button onClick={onJson} disabled={!isComplete}><span><Braces /></span><div><strong>结构化输出</strong><small>{isSnapshot ? "查看该快照的 API JSON" : "查看 API JSON 响应"}</small></div><ChevronRight /></button><div className="eval-mini"><span><strong>54</strong><small>Eval cases</small></span><span><strong>100%</strong><small>Retrieval hit@3</small></span></div><p>deterministic baseline · synthetic data · rerunnable</p></div>
   </aside>;
 }
 
 function RunHistory({ onOpen }: { onOpen: (item: Scenario) => void }) {
-  return <main className="page-view"><div className="page-intro"><span className="hero-kicker"><History size={15} /> AUDITABLE RUNS</span><h1><span className="headline-line"><span>每一次判断，</span></span><span className="headline-line"><span>都能沿证据链复盘。</span></span></h1><p>运行记录保留问题分类、检索来源、工具结果、人工决策和最终状态。这里展示的是脱敏的合成运行。</p></div><div className="history-table"><div className="history-head"><span>运行</span><span>分类</span><span>风险</span><span>状态</span><span>耗时</span><span /></div>{scenarios.map((item) => <button key={item.id} onClick={() => onOpen(item)}><span><b>{getRunId(item.id)}</b><small>{item.question}</small></span><span>{item.category}</span><span><i className={`risk-dot ${item.risk}`} />{item.risk}</span><span className="success-state"><Check size={15} />完成</span><span>{item.duration}</span><ChevronRight size={17} /></button>)}</div><div className="history-summary"><div><strong>54</strong><span>评测案例</span></div><div><strong>0</strong><span>基线执行失败</span></div><div><strong>100%</strong><span>Citation coverage</span></div><div><strong>91.18%</strong><span>Retrieval hit@3</span></div></div><p className="baseline-disclaimer">这些指标来自仓库内 deterministic baseline 的实际结果，不代表生产模型准确率。</p></main>;
+  return <main className="page-view"><div className="page-intro"><span className="hero-kicker"><History size={15} /> AUDITABLE RUNS</span><h1><span className="headline-line"><span>每一次判断，</span></span><span className="headline-line"><span>都能沿证据链复盘。</span></span></h1><p>运行记录保留问题分类、检索来源、工具结果、人工决策和最终状态。这里展示的是脱敏的合成运行。</p></div><div className="history-table"><div className="history-head"><span>运行</span><span>分类</span><span>风险</span><span>状态</span><span>耗时</span><span /></div>{scenarios.map((item) => <button key={item.id} onClick={() => onOpen(item)}><span><b>{getRunId(item.id)}</b><small>{item.question}</small></span><span>{item.category}</span><span><i className={`risk-dot ${item.risk}`} />{item.risk}</span><span className="success-state"><Check size={15} />完成</span><span>{item.duration}</span><ChevronRight size={17} /></button>)}</div><div className="history-summary"><div><strong>54</strong><span>评测案例</span></div><div><strong>0</strong><span>基线执行失败</span></div><div><strong>100%</strong><span>Citation coverage</span></div><div><strong>100%</strong><span>Retrieval hit@3</span></div></div><p className="baseline-disclaimer">这些指标来自仓库内 deterministic baseline 的实际结果，不代表生产模型准确率。</p></main>;
 }
 
 const codeSnapshots = {
@@ -517,7 +654,7 @@ function EngineeringView({ activeTab, setActiveTab, onCopy, copied }: { activeTa
     <div className="engineering-grid"><section className="code-panel"><div className="code-tabs">{(["code", "json", "trace"] as EngineeringTab[]).map((tab) => <button className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>{tab === "code" ? <><Code2 />Code</> : tab === "json" ? <><FileJson />JSON</> : <><Terminal />Trace</>}</button>)}<button className="copy-button" onClick={() => onCopy(codeSnapshots[activeTab])}>{copied ? <Check /> : <Copy />}{copied ? "已复制" : "复制"}</button></div><div className="code-caption"><span>示例 / 运行快照</span><small>已脱敏，不含模型私有推理或环境变量</small></div><pre><code>{codeSnapshots[activeTab]}</code></pre></section>
       <section className="principles-panel"><span className="micro-label">设计原理 / 面试看点</span><div><span><ShieldCheck /></span><strong>为什么 Agent 不直连 ERP 数据库？</strong><p>REST 边界保留系统所有权、JSON 契约、鉴权位置和完整审计轨迹。</p></div><div><span><TicketCheck /></span><strong>为什么写操作必须 HITL？</strong><p>LLM 只能提议；确定性策略在 side effect 之前中断并等待责任人批准。</p></div><div><span><CircleDot /></span><strong>证据门如何防幻觉？</strong><p>输出引用必须属于当次 Top 3；无有效工具证据时会降低置信度并明确不足。</p></div><div><span><Activity /></span><strong>run_id 与 thread_id</strong><p>run_id 标识一次诊断与幂等写入；thread_id 标识可暂停、可恢复的 Graph checkpoint。</p></div></section>
     </div>
-    <section className="eval-proof"><div><span className="micro-label">ACTUAL BASELINE</span><h2>评测结果来自仓库内实际 runner</h2><p>54 条人工 ground truth · deterministic-baseline-v1 · 0 execution failures</p></div><div><strong>100%</strong><small>Classification</small></div><div><strong>100%</strong><small>Tool selection</small></div><div><strong>91.18%</strong><small>Retrieval hit@3</small></div><div><strong>100%</strong><small>Citation coverage</small></div></section>
+    <section className="eval-proof"><div><span className="micro-label">ACTUAL BASELINE</span><h2>评测结果来自仓库内实际 runner</h2><p>54 条人工 ground truth · deterministic-baseline-v2 · 0 execution failures</p></div><div><strong>100%</strong><small>Classification</small></div><div><strong>100%</strong><small>Tool selection</small></div><div><strong>100%</strong><small>Retrieval hit@3</small></div><div><strong>100%</strong><small>Evidence validity</small></div></section>
   </main>;
 }
 

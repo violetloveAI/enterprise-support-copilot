@@ -27,7 +27,9 @@ test("ships non-empty tool and knowledge fixtures", async () => {
   assert.match(source, /get_claim_status/);
   assert.match(source, /凭证生成规则/);
   assert.match(source, /REQUEST\\nPOST \/internal\/tools/);
-  assert.match(source, /retrieval: hybrid/);
+  assert.match(source, /retrieval: \$\{scenario\.retrievalLabel/);
+  assert.match(source, /scenarioFromApi/);
+  assert.match(source, /resumeDiagnosis/);
   assert.doesNotMatch(source, /尚无执行记录/);
 });
 

@@ -1,0 +1,10 @@
+[
+  {"claim_id":"CLM-2026-001","current_step":null,"status":"NOT_STARTED","steps":[]},
+  {"claim_id":"CLM-2026-002","current_step":null,"status":"NOT_STARTED","steps":[]},
+  {"claim_id":"CLM-2026-003","current_step":2,"status":"WAITING","steps":[{"step":1,"role":"LINE_MANAGER","status":"APPROVED","acted_at":"2026-08-03T01:00:00Z"},{"step":2,"role":"REGIONAL_FINANCE","status":"PENDING","assignee":"U1005","due_at":"2026-08-04T01:00:00Z"}]},
+  {"claim_id":"CLM-2026-004","current_step":null,"status":"NOT_STARTED","steps":[]},
+  {"claim_id":"CLM-2026-005","current_step":3,"status":"COMPLETED","steps":[{"step":1,"role":"LINE_MANAGER","status":"APPROVED"},{"step":2,"role":"COST_CENTER_OWNER","status":"APPROVED"},{"step":3,"role":"FINANCE_REVIEWER","status":"APPROVED"}]},
+  {"claim_id":"CLM-2026-006","current_step":2,"status":"COMPLETED","steps":[{"step":1,"role":"LINE_MANAGER","status":"APPROVED"},{"step":2,"role":"FINANCE_REVIEWER","status":"APPROVED"}]},
+  {"claim_id":"CLM-2026-007","current_step":2,"status":"COMPLETED","steps":[{"step":1,"role":"LINE_MANAGER","status":"APPROVED"},{"step":2,"role":"FINANCE_REVIEWER","status":"APPROVED"}]},
+  {"claim_id":"CLM-2026-008","current_step":2,"status":"REJECTED","steps":[{"step":1,"role":"LINE_MANAGER","status":"APPROVED"},{"step":2,"role":"BUDGET_OWNER","status":"REJECTED","comment":"预算余额不足"}]}
+]

@@ -1,5 +1,7 @@
 # Enterprise Support Copilot — Delivery Plan
 
+> Historical milestone plan. Full-stack v1.0 is complete; `README.md` and `docs/ARCHITECTURE.md` describe the current state.
+
 ## Goal
 
 Build a portfolio-grade enterprise support console that makes knowledge retrieval, system evidence, structured diagnosis, and human approval visible without exposing private chain-of-thought.
