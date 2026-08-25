@@ -1,6 +1,6 @@
 <div align="center">
 
-# Enterprise Support Copilot
+# 🛡️ Enterprise Support Copilot
 
 ### 证据驱动的企业 ERP 故障诊断 Agent
 
@@ -21,19 +21,19 @@
 
 ## 目录
 
-- [快速开始](#快速开始)
-- [产品界面](#产品界面)
-- [它解决什么问题](#它解决什么问题)
-- [推荐演示路径](#推荐演示路径)
-- [系统如何工作](#系统如何工作)
-- [运行模式](#运行模式)
-- [API](#api)
-- [测试与评测](#测试与评测)
-- [部署到 GitHub Pages](#部署到-github-pages)
-- [项目结构](#项目结构)
-- [项目边界](#项目边界)
+- [🚀 快速开始](#快速开始)
+- [🖼️ 产品界面](#产品界面)
+- [🎯 它解决什么问题](#它解决什么问题)
+- [🎬 推荐演示路径](#推荐演示路径)
+- [🧠 系统如何工作](#系统如何工作)
+- [🔀 运行模式](#运行模式)
+- [🔌 API](#api)
+- [📊 测试与评测](#测试与评测)
+- [🌍 部署到 GitHub Pages](#部署到-github-pages)
+- [📁 项目结构](#项目结构)
+- [⚠️ 项目边界](#项目边界)
 
-## 快速开始
+## 🚀 快速开始
 
 ### 方式一：Docker Compose
 
@@ -104,7 +104,7 @@ docker compose up --build
 
 </details>
 
-## 产品界面
+## 🖼️ 产品界面
 
 下面的图片都来自本地运行页面。示例使用合成数据，不包含真实企业信息。
 
@@ -112,30 +112,30 @@ docker compose up --build
   <tr>
     <td width="50%" align="center">
       <img src="docs/assets/tool-call-audit.jpg" alt="Mock ERP 工具调用的请求、响应与审计详情" />
-      <br /><strong>工具调用审计</strong>
+      <br /><strong>🔧 工具调用审计</strong>
       <br /><sub>查看输入、HTTP 响应、耗时、重试次数和 side effect 状态。</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/assets/knowledge-sources.jpg" alt="企业知识库 Top 3 检索结果与引用分数" />
-      <br /><strong>知识来源</strong>
+      <br /><strong>📚 知识来源</strong>
       <br /><sub>展示 Top 3 检索结果、文档编号、分数和引用校验状态。</sub>
     </td>
   </tr>
   <tr>
     <td width="70%" align="center">
       <img src="docs/assets/engineering-view.jpg" alt="从 React Workbench 到 Mock ERP 的工程架构视图" />
-      <br /><strong>工程视图</strong>
+      <br /><strong>🏗️ 工程视图</strong>
       <br /><sub>说明前端、Agent API、LangGraph、RAG 和 Mock ERP 的职责边界。</sub>
     </td>
     <td width="30%" align="center">
       <img src="docs/assets/mobile-workbench.jpg" alt="390×844 移动端诊断工作台" />
-      <br /><strong>移动端工作台</strong>
+      <br /><strong>📱 移动端工作台</strong>
       <br /><sub>在 390 × 844 视口下保留完整诊断入口。</sub>
     </td>
   </tr>
 </table>
 
-## 它解决什么问题
+## 🎯 它解决什么问题
 
 企业支持的风险不是 Agent 回答“我不知道”，而是它在缺少业务证据时仍给出确定结论。
 
@@ -149,14 +149,14 @@ Enterprise Support Copilot 为每次诊断设置三条边界：
 
 | 能力 | 实现 | 作用 |
 |:---|:---|:---|
-| Agent workflow | LangGraph 状态图与可恢复运行 | 让诊断步骤可观察 |
-| Enterprise RAG | 12 份合成知识文档，lexical / vector 双模式 | 提供可追溯的制度依据 |
-| Tool use | 独立 Mock ERP REST API，只读工具白名单 | 防止模型猜测业务事实 |
-| Evidence Guard | 校验 citation、`evidence_id` 和置信度 | 移除不属于本次运行的证据 |
-| Human-in-the-loop | `create_ticket` 前 interrupt / resume | 阻止未经批准的写操作 |
-| Evaluation | 54 条标注合成案例与六类指标 | 提供可重复的基线评测 |
+| 🧠 Agent workflow | LangGraph 状态图与可恢复运行 | 让诊断步骤可观察 |
+| 📚 Enterprise RAG | 12 份合成知识文档，lexical / vector 双模式 | 提供可追溯的制度依据 |
+| 🔧 Tool use | 独立 Mock ERP REST API，只读工具白名单 | 防止模型猜测业务事实 |
+| 🛡️ Evidence Guard | 校验 citation、`evidence_id` 和置信度 | 移除不属于本次运行的证据 |
+| ✋ Human-in-the-loop | `create_ticket` 前 interrupt / resume | 阻止未经批准的写操作 |
+| 📊 Evaluation | 54 条标注合成案例与六类指标 | 提供可重复的基线评测 |
 
-## 推荐演示路径
+## 🎬 推荐演示路径
 
 | 输入 | 观察重点 | 预期结果 |
 |:---|:---|:---|
@@ -166,7 +166,7 @@ Enterprise Support Copilot 为每次诊断设置三条边界：
 
 面试时可按 [3–5 分钟演示脚本](docs/INTERVIEW_DEMO_SCRIPT.md) 展示执行轨迹、工具调用、知识来源和审批恢复。
 
-## 系统如何工作
+## 🧠 系统如何工作
 
 ```text
 用户问题
@@ -205,7 +205,7 @@ flowchart LR
 
 详见 [Architecture](docs/ARCHITECTURE.md) 和 [Full-stack integration](docs/FULLSTACK_INTEGRATION.md)。
 
-## 运行模式
+## 🔀 运行模式
 
 | 模式 | 模型 | 检索 | ERP | 用途 |
 |:---|:---|:---|:---|:---|
@@ -215,7 +215,7 @@ flowchart LR
 
 如果已配置的 Agent API 不可用，前端会显示警告并降级到离线快照。界面不会把快照标成实时运行。
 
-## API
+## 🔌 API
 
 Agent API 的主要端点：
 
@@ -235,7 +235,7 @@ curl -X POST http://localhost:8000/api/v1/chat/invoke \
   -d '{"message":"CLM-2026-005 为什么凭证生成失败？"}'
 ```
 
-## 测试与评测
+## 📊 测试与评测
 
 运行前端构建、前端静态测试、后端测试和 Agent 评测：
 
@@ -262,7 +262,7 @@ Actual run: `2026-08-25T17:44:08.036977+00:00` · provider `deterministic` · mo
 
 这些分数只表示 54 条人工标注合成案例在确定性基线上的可复现表现。它们不代表生产模型准确率或真实故障解决率。
 
-## 部署到 GitHub Pages
+## 🌍 部署到 GitHub Pages
 
 GitHub Pages 只能托管构建后的 HTML、CSS 和 JavaScript。它可以运行离线快照模式，但不能运行 FastAPI、LangGraph、SQLite 或 Mock ERP。
 
@@ -303,7 +303,7 @@ https://violetloveai.github.io/enterprise-support-copilot/
 
 如需在线运行真实 Agent，还要把 Agent API 和 Mock ERP 部署到可运行容器的云服务。然后在前端构建时设置公网 HTTPS `NEXT_PUBLIC_AGENT_API_URL`，并更新后端 CORS 来源。
 
-## 项目结构
+## 📁 项目结构
 
 ```text
 enterprise-support-copilot/
@@ -317,7 +317,7 @@ enterprise-support-copilot/
 └── docker-compose.yml           # 三服务全栈启动
 ```
 
-## 项目边界
+## ⚠️ 项目边界
 
 - 组织、用户、单据、接口日志、知识文档和工单均为合成数据。
 - 默认本地模式不调用外部模型。只有配置 endpoint 后才运行真实模型与向量检索。
@@ -325,7 +325,7 @@ enterprise-support-copilot/
 - 代码由作者在 AI 辅助下完成。架构取舍、实现、测试、评测与文档均可在仓库中追溯。
 - 第三方依赖和许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-## License
+## 📄 License
 
 [MIT](LICENSE)
 
