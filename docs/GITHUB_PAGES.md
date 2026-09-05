@@ -2,28 +2,9 @@
 
 本文只发布前端的离线快照模式。GitHub Pages 不能运行 FastAPI、LangGraph、SQLite 或 Mock ERP。
 
-## 1. 配置仓库子路径
+## 1. 检查现有配置
 
-将 `next.config.ts` 改为：
-
-```ts
-import type { NextConfig } from "next";
-
-const isGitHubPages = process.env.GITHUB_PAGES === "true";
-const repoName = "enterprise-support-copilot";
-
-const nextConfig: NextConfig = {
-  output: "export",
-  trailingSlash: true,
-  images: { unoptimized: true },
-  basePath: isGitHubPages ? `/${repoName}` : "",
-  assetPrefix: isGitHubPages ? `/${repoName}/` : "",
-};
-
-export default nextConfig;
-```
-
-`basePath` 让页面路由使用 `/enterprise-support-copilot`。`assetPrefix` 让静态资源从同一仓库子路径加载。
+`next.config.ts` 已配置 `output: "export"`，并由 `GITHUB_PAGES=true` 启用仓库子路径。仓库 Pages 已使用 `gh-pages` 分支根目录，后续发布无需更改此设置。
 
 ## 2. 安装发布工具
 
@@ -34,7 +15,7 @@ npm install --save-dev gh-pages
 ## 3. 构建 Pages 版本
 
 ```bash
-GITHUB_PAGES=true npm run build
+GITHUB_PAGES=true npm run build -- --webpack
 touch out/.nojekyll
 ```
 
@@ -48,7 +29,7 @@ npx gh-pages -d out
 
 该命令将 `out/` 发布到 `gh-pages` 分支。
 
-## 5. 启用 GitHub Pages
+## 5. 首次启用 GitHub Pages（现有仓库可跳过）
 
 1. 打开仓库 **Settings → Pages**。
 2. 将 **Source** 设为 **Deploy from a branch**。

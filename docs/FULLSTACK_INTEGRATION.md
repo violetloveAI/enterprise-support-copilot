@@ -34,4 +34,4 @@ The backend checks that the run is actually waiting for approval. A rejected run
 
 ## Failure behavior
 
-If a configured Agent API cannot be reached, the frontend displays a visible warning and switches to the deterministic fixture. It never labels fixture content as a live run.
+If a configured Agent API cannot be reached, returns a failure status, or omits a valid diagnosis, the frontend stops the run and displays the error. It preserves the submitted question. API failures do not trigger fixture playback or appear as successful diagnoses.

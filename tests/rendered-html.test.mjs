@@ -26,7 +26,7 @@ test("ships non-empty tool and knowledge fixtures", async () => {
   const source = await readFile(new URL("../app/SupportConsole.tsx", import.meta.url), "utf8");
   assert.match(source, /get_claim_status/);
   assert.match(source, /凭证生成规则/);
-  assert.match(source, /REQUEST\\nPOST \/internal\/tools/);
+  assert.match(source, /TOOL INPUT\\ntool: \$\{tool\.name\}/);
   assert.match(source, /retrieval: \$\{scenario\.retrievalLabel/);
   assert.match(source, /scenarioFromApi/);
   assert.match(source, /resumeDiagnosis/);

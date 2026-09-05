@@ -11,13 +11,13 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-73D7AD?style=flat-square)](LICENSE)
 
-[系统架构](docs/ARCHITECTURE.md) · [面试演示脚本](docs/INTERVIEW_DEMO_SCRIPT.md) · [评测结果](backend/evals/results/latest.md)
+[在线体验](https://violetloveai.github.io/enterprise-support-copilot/) · [系统架构](docs/ARCHITECTURE.md) · [面试演示脚本](docs/INTERVIEW_DEMO_SCRIPT.md) · [评测结果](backend/evals/results/latest.md)
 
 <img src="docs/assets/diagnosis-complete.jpg" width="100%" alt="Enterprise Support Copilot 真实产品界面：凭证失败诊断结果与 Agent 执行轨迹" />
 
 </div>
 
-> 当前仓库尚未启用 GitHub Pages。上图来自本地运行的真实页面，不是概念稿。
+> 公开页面提供 4 个固定案例的离线回放，所有示例均使用合成数据。下方截图为开发过程中的功能展示，以在线 Demo 为当前界面。
 
 ## 目录
 
@@ -76,7 +76,7 @@ docker compose up --build
 
 5. 打开 `http://localhost:3000`。
 
-如果不设置 `NEXT_PUBLIC_AGENT_API_URL`，前端会明确显示“演示快照模式”，并使用合成离线数据。
+如果不设置 `NEXT_PUBLIC_AGENT_API_URL`，前端会显示“演示快照模式”，只回放 4 个固定案例：`CLM-2026-005`、`CLM-2026-007`、`U1002` 和 `INC-SCOPE`。选择示例，或输入单个受支持的完整编号、完整示例问题，即可回放。未知对象或一次输入多个对象时，页面会提示补充信息。其他问题需要连接诊断后端。
 
 <details>
 <summary><strong>接入 OpenAI-compatible 模型与向量检索</strong></summary>
@@ -113,7 +113,7 @@ docker compose up --build
     <td width="50%" align="center">
       <img src="docs/assets/tool-call-audit.jpg" alt="Mock ERP 工具调用的请求、响应与审计详情" />
       <br /><strong>🔧 工具调用审计</strong>
-      <br /><sub>查看输入、HTTP 响应、耗时、重试次数和 side effect 状态。</sub>
+      <br /><sub>查看输入、工具结果、耗时、重试次数和 side effect 状态。</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/assets/knowledge-sources.jpg" alt="企业知识库 Top 3 检索结果与引用分数" />
@@ -209,11 +209,13 @@ flowchart LR
 
 | 模式 | 模型 | 检索 | ERP | 用途 |
 |:---|:---|:---|:---|:---|
-| 公开静态演示 | 前端确定性快照 | 前端快照 | 前端快照 | 无后端浏览完整界面 |
+| 公开静态演示 | 前端确定性快照 | 前端快照 | 前端快照 | 回放 4 个固定案例，浏览执行轨迹与证据 |
 | 本地全栈（默认） | deterministic baseline | lexical retrieval | Mock ERP API | 无密钥复现、测试和面试 |
 | 模型全栈 | OpenAI-compatible LLM | vector retrieval | Mock ERP API | 验证真实模型输出与 RAG |
 
-如果已配置的 Agent API 不可用，前端会显示警告并降级到离线快照。界面不会把快照标成实时运行。
+如果已配置的 Agent API 无法连接、返回失败状态或缺少有效诊断，前端会停止本次运行、显示错误并保留输入的问题。API 报错不会触发离线案例回放，也不会显示为诊断成功。
+
+离线演示中的人工决定和演示工单只在当前页面会话内有效，刷新后重置，不创建外部工单。连接后端时，只有审批接口确认成功后，页面才更新工单状态。
 
 ## 🔌 API
 
@@ -243,7 +245,7 @@ curl -X POST http://localhost:8000/api/v1/chat/invoke \
 npm run test:all
 ```
 
-最近一次 deterministic baseline 结果：
+仓库记录的 deterministic baseline 结果：
 
 <!-- EVAL_METRICS_START -->
 Actual run: `2026-08-25T17:44:08.036977+00:00` · provider `deterministic` · model
@@ -260,46 +262,21 @@ Actual run: `2026-08-25T17:44:08.036977+00:00` · provider `deterministic` · mo
 | Evidence reference validity | 100.00% |
 <!-- EVAL_METRICS_END -->
 
-这些分数只表示 54 条人工标注合成案例在确定性基线上的可复现表现。它们不代表生产模型准确率或真实故障解决率。
+这些分数来自 54 条人工标注合成案例的确定性基线评测。页面中的“54”和“100%”引用这组固定结果，不随演示操作重新计算。它们不代表生产模型准确率或真实故障解决率。
 
 ## 🌍 部署到 GitHub Pages
 
 GitHub Pages 只能托管构建后的 HTML、CSS 和 JavaScript。它可以运行离线快照模式，但不能运行 FastAPI、LangGraph、SQLite 或 Mock ERP。
 
-当前仓库已使用 Next.js 静态导出，但还没有配置仓库子路径和发布分支。仓库名为 `enterprise-support-copilot` 时，完成部署后的默认地址为：
+公开演示地址：[Enterprise Support Copilot](https://violetloveai.github.io/enterprise-support-copilot/)。
 
-```text
-https://violetloveai.github.io/enterprise-support-copilot/
+仓库已配置静态导出和 `/enterprise-support-copilot` 子路径。使用以下命令生成 `out/`，然后将静态产物发布到 `gh-pages` 分支根目录：
+
+```bash
+GITHUB_PAGES=true npm run build -- --webpack
 ```
 
-1. 在 `next.config.ts` 中为 Pages 构建添加 `basePath` 和 `assetPrefix`。
-
-2. 安装 `gh-pages`。
-
-   ```bash
-   npm install --save-dev gh-pages
-   ```
-
-3. 构建仓库子路径版本。
-
-   ```bash
-   GITHUB_PAGES=true npm run build
-   touch out/.nojekyll
-   ```
-
-4. 发布 `out/`。
-
-   ```bash
-   npx gh-pages -d out
-   ```
-
-5. 打开仓库的 **Settings → Pages**。
-
-6. 将 **Source** 设为 **Deploy from a branch**。
-
-7. 选择 `gh-pages` 分支和 `/(root)` 目录，然后保存。
-
-部署完成后，检查首页、静态资源、刷新、移动端布局和浏览器控制台。完整配置说明见 [GitHub Pages 发布说明](docs/GITHUB_PAGES.md)。
+完整步骤见 [GitHub Pages 发布说明](docs/GITHUB_PAGES.md)。
 
 如需在线运行真实 Agent，还要把 Agent API 和 Mock ERP 部署到可运行容器的云服务。然后在前端构建时设置公网 HTTPS `NEXT_PUBLIC_AGENT_API_URL`，并更新后端 CORS 来源。
 
@@ -307,7 +284,7 @@ https://violetloveai.github.io/enterprise-support-copilot/
 
 ```text
 enterprise-support-copilot/
-├── app/                         # Next.js 工作台、API client、离线 fallback
+├── app/                         # Next.js 工作台、API client、固定案例回放
 ├── backend/services/agent_api/  # LangGraph、RAG、工具、证据门、运行记录
 ├── backend/services/mock_erp/   # 独立合成 ERP REST API
 ├── backend/knowledge_base/      # 12 份合成企业知识文档

@@ -14,18 +14,20 @@ import {
   type ApiRunResponse,
 } from "./support-api";
 
+import { matchScenario } from "./scenario-match";
+
 type View = "workbench" | "runs" | "engineering";
 type DetailTab = "trace" | "tools" | "knowledge";
 type EngineeringTab = "code" | "json" | "trace";
 type TraceEvent = {
-  node: string; label: string; caption: string; latency: number; output: string;
+  status?: string; node: string; label: string; caption: string; latency: number; output: string;
 };
 type Scenario = {
   id: string; title: string; question: string; caption: string; claim: string;
   category: string; risk: "低风险" | "中风险" | "高风险"; confidence: number;
   duration: string; rootCause: string; evidence: string; needsApproval: boolean;
   steps: string[]; sources: { id: string; title: string; score: number; excerpt: string }[];
-  tools: { name: string; latency: number; request: string; response: string }[];
+  tools: { ok?: boolean; name: string; latency: number; request: string; response: string }[];
   trace?: TraceEvent[];
   runtime?: "fixture" | "api";
   retrievalLabel?: string;
@@ -38,7 +40,7 @@ const scenarios: Scenario[] = [
     question: "CLM-2026-005 为什么凭证生成失败？", category: "凭证 / 配置问题",
     risk: "中风险", confidence: 92, duration: "1.18s", needsApproval: true,
     rootCause: "财务期间未开放，凭证生成被配置校验拦截。",
-    evidence: "凭证服务返回 FI_PERIOD_CLOSED；公司代码 C100 的 2026-08 期间状态为 CLOSED。",
+    evidence: "凭证服务返回 FI_PERIOD_CLOSED；单据已审批通过，公司代码为 C100。",
     steps: ["核对公司代码与计划过账日期", "由财务控制岗确认期间开放策略", "配置修复后由授权人员重新触发凭证"],
     sources: [
       { id: "KB-008", title: "凭证生成规则", score: 94, excerpt: "凭证生成前必须校验公司代码、过账日期与财务期间状态。" },
@@ -54,8 +56,8 @@ const scenarios: Scenario[] = [
     id: "sync", title: "附件同步超时", claim: "CLM-2026-007", caption: "接口连续失败",
     question: "CLM-2026-007 附件同步接口为什么失败？", category: "接口 / 系统异常",
     risk: "高风险", confidence: 95, duration: "1.42s", needsApproval: true,
-    rootCause: "附件服务连接池耗尽，重试任务持续超时。",
-    evidence: "近 15 分钟出现 38 次 HTTP 504；attachment-sync 依赖平均响应时间达到 12.4s。",
+    rootCause: "附件同步持续返回 504，异常日志指向 attachment-sync 依赖。",
+    evidence: "近 15 分钟出现 38 次 HTTP 504；需进一步核查附件服务健康状态与超时原因。",
     steps: ["确认附件服务健康状态与连接池", "暂停非必要批量同步任务", "创建 P1 工单并通知接口值班组"],
     sources: [
       { id: "KB-010", title: "ERP 接口排查手册", score: 96, excerpt: "同一依赖连续 5xx 或超时应按共享服务异常处理。" },
@@ -71,7 +73,7 @@ const scenarios: Scenario[] = [
     id: "permission", title: "差旅权限缺失", claim: "U1002", caption: "提交动作被拒绝",
     question: "用户 U1002 提交差旅报销时提示没有权限", category: "权限问题",
     risk: "低风险", confidence: 97, duration: "0.84s", needsApproval: false,
-    rootCause: "用户具备登录与草稿权限，但缺少 expense.travel.submit。",
+    rootCause: "用户已分配 Expense-Employee 角色，但缺少 expense.travel.submit。",
     evidence: "角色 Expense-Employee 已分配；权限集合中不存在 expense.travel.submit。",
     steps: ["核对员工组织与成本中心", "由直属主管发起权限申请", "授权后重新登录并验证提交动作"],
     sources: [
@@ -87,8 +89,8 @@ const scenarios: Scenario[] = [
     id: "outage", title: "公司范围 500", claim: "INC-SCOPE", caption: "多用户同时失败",
     question: "今天很多员工提交报销时统一显示 500，发生了什么？", category: "接口 / 系统异常",
     risk: "高风险", confidence: 93, duration: "1.36s", needsApproval: true,
-    rootCause: "主数据依赖持续超时，造成报销提交服务公司范围不可用。",
-    evidence: "15 分钟内记录 127 次同源 500；多个用户、多个成本中心均受影响。",
+    rootCause: "报销提交集中出现 500 错误，异常日志指向 master-data 依赖。",
+    evidence: "报销提交日志在 15 分钟内记录 127 次 500，关联依赖为 master-data。",
     steps: ["冻结报销服务非必要发布", "检查主数据依赖与最近变更", "创建 P1 事件并通知 ERP 值班组"],
     sources: [
       { id: "KB-010", title: "ERP 接口排查手册", score: 95, excerpt: "多用户同源 5xx 优先判断共享依赖异常。" },
@@ -175,6 +177,7 @@ function scenarioFromApi(run: ApiRunResponse, fallback: Scenario): Scenario {
       const [label, caption] = eventLabels[event.node_name] ?? [event.node_name, event.event_type];
       return {
         node: `${event.node_name}:${event.sequence}`,
+        status: event.status,
         label,
         caption,
         latency: event.duration_ms ?? 0,
@@ -189,7 +192,7 @@ function scenarioFromApi(run: ApiRunResponse, fallback: Scenario): Scenario {
     duration: `${Math.max(durationMs, 1)}ms`,
     rootCause: diagnosis.possible_causes[0] ?? diagnosis.uncertainty_statement ?? "证据不足，无法确认根因。",
     evidence: diagnosis.evidence.map((item) => item.statement).join("；") || diagnosis.uncertainty_statement || "当前没有可验证的工具证据。",
-    needsApproval: diagnosis.escalation_required,
+    needsApproval: Boolean(run.pending_approval),
     steps: diagnosis.troubleshooting_steps,
     sources: run.retrieved_sources.map((source) => ({
       id: source.chunk_id,
@@ -199,6 +202,7 @@ function scenarioFromApi(run: ApiRunResponse, fallback: Scenario): Scenario {
     })),
     tools: run.tool_calls.map((tool) => ({
       name: tool.tool_name,
+      ok: tool.ok,
       latency: toolLatency.get(tool.tool_name) ?? 0,
       request: JSON.stringify(tool.arguments),
       response: JSON.stringify(tool.ok ? tool.result : { error: tool.error }),
@@ -219,6 +223,10 @@ export default function SupportConsole() {
   const [view, setView] = useState<View>("workbench");
   const [scenarioId, setScenarioId] = useState("voucher");
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const requestVersion = useRef(0);
+  const approvalBusy = useRef(false);
+  const completedRuns = useRef(new Map<string, { query: string; ticketStatus: "idle" | "created" | "rejected"; steps: number[]; response: ApiRunResponse | null }>());
   const [runState, setRunState] = useState<"idle" | "running" | "complete">("idle");
   const [stage, setStage] = useState(0);
   const [detailTab, setDetailTab] = useState<DetailTab>("trace");
@@ -229,7 +237,7 @@ export default function SupportConsole() {
   const [checkedSteps, setCheckedSteps] = useState<number[]>([]);
   const [copied, setCopied] = useState(false);
   const [runResponse, setRunResponse] = useState<ApiRunResponse | null>(null);
-  const [runtimeMode, setRuntimeMode] = useState<"fixture" | "configured" | "api" | "fallback">(
+  const [runtimeMode, setRuntimeMode] = useState<"fixture" | "configured" | "api">(
     hasConfiguredApi() ? "configured" : "fixture",
   );
   const [runError, setRunError] = useState<string | null>(null);
@@ -344,27 +352,42 @@ export default function SupportConsole() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
+      requestVersion.current += 1;
       stopTimers();
       window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
 
+  useEffect(() => {
+    if (runState === "complete") completedRuns.current.set(scenarioId, { query: submittedQuery, ticketStatus, steps: checkedSteps, response: runResponse });
+  }, [runState, scenarioId, submittedQuery, ticketStatus, checkedSteps, runResponse]);
+
+  useEffect(() => { setCopied(false); }, [modal, engTab]);
+
+  function clearPending() {
+    requestVersion.current += 1;
+    stopTimers(); setCopied(false); setApprovalOpen(false); setModal(null);
+    approvalBusy.current = false; setApprovalPending(false); setRunError(null);
+  }
+
   function reset() {
-    stopTimers(); setView("workbench"); setRunState("idle"); setStage(0); setQuery("");
+    clearPending(); setView("workbench"); setRunState("idle"); setStage(0); setQuery(""); setSubmittedQuery("");
     setTicketStatus("idle"); setCheckedSteps([]); setDetailTab("trace"); setRunResponse(null);
-    setRunError(null); setRuntimeMode(hasConfiguredApi() ? "configured" : "fixture");
+    setRuntimeMode(hasConfiguredApi() ? "configured" : "fixture");
   }
 
   function selectScenario(item: Scenario) {
-    stopTimers(); setScenarioId(item.id); setQuery(item.question); setRunState("idle");
-    setStage(0); setTicketStatus("idle"); setCheckedSteps([]); setView("workbench");
-    setRunResponse(null); setRunError(null);
+    clearPending(); setScenarioId(item.id); setQuery(item.question); setSubmittedQuery(""); setRunState("idle");
+    setStage(0); setTicketStatus("idle"); setCheckedSteps([]); setView("workbench"); setRunResponse(null);
+    setRuntimeMode(hasConfiguredApi() ? "configured" : "fixture");
   }
 
   function openCompleted(item: Scenario) {
-    stopTimers(); setScenarioId(item.id); setQuery(item.question); setRunState("complete");
-    setStage(traceStages.length); setTicketStatus("idle"); setCheckedSteps([]); setView("workbench");
-    setRunResponse(null); setRunError(null);
+    const saved = completedRuns.current.get(item.id);
+    clearPending(); setScenarioId(item.id); setQuery(saved?.query ?? item.question); setSubmittedQuery(saved?.query ?? item.question);
+    setRunState("complete"); setStage(traceStages.length); setView("workbench");
+    setTicketStatus(saved?.ticketStatus ?? "idle"); setCheckedSteps(saved?.steps ?? []);
+    setRunResponse(saved?.response ?? null); setRuntimeMode(saved?.response ? "api" : "fixture");
   }
 
   function scheduleProgress() {
@@ -373,65 +396,77 @@ export default function SupportConsole() {
     });
   }
 
-  function completeFixture() {
-    stopTimers(); setStage(traceStages.length); setRunState("complete");
-  }
-
   async function startRun() {
-    if (!query.trim()) return;
-    stopTimers(); setRunState("running"); setStage(0); setTicketStatus("idle"); setDetailTab("trace");
-    setRunResponse(null); setRunError(null); scheduleProgress();
+    if (!query.trim() || runState === "running") return;
+    const input = query.trim();
+    const known = matchScenario(input, scenarios);
+    if (!hasConfiguredApi() && !known) {
+      setModal({ title: "未找到对应的演示记录", subtitle: "当前为固定案例回放", body: "请选择一个示例，或输入对应的完整编号：CLM-2026-005、CLM-2026-007、U1002、INC-SCOPE。一次仅支持一个对象；其他问题需要连接诊断后端后处理。" });
+      return;
+    }
+    clearPending();
+    const version = requestVersion.current;
+    if (known) setScenarioId(known.id);
+    setSubmittedQuery(input); setCheckedSteps([]); setRunState("running"); setStage(0);
+    setTicketStatus("idle"); setDetailTab("trace"); setRunResponse(null); scheduleProgress();
     if (!hasConfiguredApi()) {
-      timers.current.push(setTimeout(completeFixture, 650 * traceStages.length + 450));
+      setRuntimeMode("fixture");
+      timers.current.push(setTimeout(() => {
+        if (version !== requestVersion.current) return;
+        stopTimers(); setStage(traceStages.length); setRunState("complete");
+      }, 650 * traceStages.length + 450));
       return;
     }
     try {
-      const response = await invokeDiagnosis(query.trim());
+      const response = await invokeDiagnosis(input);
+      if (version !== requestVersion.current) return;
       if (response.clarification_question) {
         stopTimers(); setRunState("idle"); setStage(0);
-        setModal({
-          title: "需要补充信息",
-          subtitle: "Agent 拒绝猜测缺失的业务标识",
-          body: response.clarification_question,
-        });
+        setModal({ title: "需要补充信息", subtitle: "请补充诊断所需的业务信息", body: response.clarification_question });
         return;
       }
+      if (!response.diagnosis || ["failed", "error"].includes(response.status)) throw new Error("服务未返回有效诊断，请重试。");
       stopTimers(); setRunResponse(response); setRuntimeMode("api");
       setStage(Math.max(response.events.length, traceStages.length)); setRunState("complete");
     } catch (error) {
-      setRuntimeMode("fallback");
-      setRunError(error instanceof Error ? error.message : "Agent API 暂时不可用");
-      timers.current.push(setTimeout(completeFixture, 700));
+      if (version !== requestVersion.current) return;
+      stopTimers(); setRunState("idle"); setStage(0);
+      setRunError(error instanceof Error ? error.message : "诊断服务暂时无法连接，请稍后重试。");
     }
   }
 
   async function decideApproval(decision: "approve" | "reject") {
+    if (approvalBusy.current || ticketStatus !== "idle") return;
     if (!runResponse || !hasConfiguredApi()) {
-      setTicketStatus(decision === "approve" ? "created" : "rejected");
-      setApprovalOpen(false);
+      setTicketStatus(decision === "approve" ? "created" : "rejected"); setApprovalOpen(false);
       return;
     }
-    setApprovalPending(true);
+    const version = requestVersion.current;
+    approvalBusy.current = true; setApprovalPending(true);
     try {
       const response = await resumeDiagnosis(runResponse.run_id, decision);
-      setRunResponse(response);
-      setTicketStatus(decision === "approve" ? "created" : "rejected");
-      setApprovalOpen(false);
+      if (version !== requestVersion.current) return;
+      if (["failed", "error"].includes(response.status) || (decision === "approve" && !response.ticket?.ticket_id) || (decision === "reject" && (response.pending_approval || response.ticket))) throw new Error("服务未确认操作结果，请检查运行记录后重试。");
+      setRunResponse(response); setTicketStatus(decision === "approve" ? "created" : "rejected"); setApprovalOpen(false);
     } catch (error) {
-      setModal({
-        title: "审批操作未完成",
-        subtitle: "Agent API 返回错误",
-        body: error instanceof Error ? error.message : "请检查后端服务后重试。",
-        code: true,
-      });
+      if (version !== requestVersion.current) return;
+      setModal({ title: "审批操作未完成", subtitle: "未收到成功确认", body: error instanceof Error ? error.message : "请检查后端服务后重试。" });
       setApprovalOpen(false);
     } finally {
-      setApprovalPending(false);
+      if (version === requestVersion.current) { approvalBusy.current = false; setApprovalPending(false); }
     }
   }
 
+  function showEvidence() {
+    setModal({ title: "诊断证据", subtitle: `${runId} · ${scenario.runtime === "api" ? "接口返回证据" : "示例证据"}`, code: true, body: JSON.stringify(runResponse?.diagnosis?.evidence ?? { statement: scenario.evidence, tool_results: scenario.tools.map((tool) => ({ name: tool.name, request: JSON.parse(tool.request), result: JSON.parse(tool.response) })), references: scenario.sources }, null, 2) });
+  }
+
+  function showRun() {
+    setModal({ title: "运行记录", subtitle: `${runId} · ${scenario.runtime === "api" ? "API 诊断" : "固定案例回放"}`, code: true, body: JSON.stringify({ run_id: runId, question: submittedQuery, result: scenario.rootCause, ticket_status: ticketStatus, source: scenario.runtime ?? "fixture" }, null, 2) });
+  }
+
   function showTool(tool: Scenario["tools"][number]) {
-    setModal({ title: tool.name, subtitle: `Mock ERP REST API · read-only · ${tool.latency} ms`, code: true, body: `REQUEST\nPOST /internal/tools/${tool.name}\ncontent-type: application/json\nx-run-id: ${runId}\n\n${prettyJson(tool.request)}\n\nRESPONSE · 200 OK · ${tool.latency} ms\ncontent-type: application/json\n\n${prettyJson(tool.response)}\n\nAUDIT\nside_effect: false\nretry_count: 0\nresult_used_by: evidence_guard` });
+    setModal({ title: tool.name, subtitle: `${scenario.runtime === "api" ? "API 工具结果" : "示例工具结果"} · ${tool.ok === false ? "调用失败" : "只读查询"} · ${tool.latency} ms`, code: true, body: `TOOL INPUT\ntool: ${tool.name}\nrun_id: ${runId}\n\n${prettyJson(tool.request)}\n\nRESPONSE · ${tool.ok === false ? "ERROR" : "OK"} · ${tool.latency} ms\ncontent-type: application/json\n\n${prettyJson(tool.response)}\n\nAUDIT\nside_effect: false\nretry_count: 0\nresult_used_by: evidence_guard` });
   }
 
   function showSource(source: Scenario["sources"][number]) {
@@ -439,12 +474,18 @@ export default function SupportConsole() {
   }
 
   function showTrace(event: TraceEvent, index: number) {
-    setModal({ title: event.label, subtitle: `${event.node} · step ${index + 1}/${getTraceEvents(scenario).length} · ${event.latency} ms`, code: true, body: `NODE\n${event.node}\n\nINPUT\nrun_id: ${runId}\nthread_id: ${runResponse?.thread_id ?? `THREAD-${runId.slice(-6)}`}\nscenario: ${scenario.id}\n\nOUTPUT\n${event.output}\n\nOBSERVABILITY\nstatus: succeeded\nlatency_ms: ${event.latency}\ntrace_level: safe_summary` });
+    setModal({ title: event.label, subtitle: `${event.node} · step ${index + 1}/${getTraceEvents(scenario).length} · ${event.latency} ms`, code: true, body: `NODE\n${event.node}\n\nINPUT\nrun_id: ${runId}\nthread_id: ${runResponse?.thread_id ?? `THREAD-${runId.slice(-6)}`}\nscenario: ${scenario.id}\n\nOUTPUT\n${event.output}\n\nOBSERVABILITY\nstatus: ${event.status ?? "succeeded"}\nlatency_ms: ${event.latency}\ntrace_level: safe_summary` });
   }
 
   async function copyText(text: string) {
-    await navigator.clipboard?.writeText(text);
-    setCopied(true); setTimeout(() => setCopied(false), 1500);
+    try {
+      if (!navigator.clipboard) throw new Error("当前浏览器不支持剪贴板");
+      await navigator.clipboard.writeText(text);
+      setCopied(true); timers.current.push(setTimeout(() => setCopied(false), 1500));
+    } catch {
+      setCopied(false);
+      setModal({ title: "自动复制未完成", subtitle: "可选中下方内容手动复制", body: text, code: true });
+    }
   }
 
   return (
@@ -464,16 +505,16 @@ export default function SupportConsole() {
           ))}
         </nav>
         <div className="recent-runs">
-          <span className="nav-label">最近运行</span>
+          <span className="nav-label">示例运行</span>
           {scenarios.slice(0, 3).map((item, index) => (
             <button key={item.id} onClick={() => openCompleted(item)}>
               <i className={`status-color status-${index}`} />
-              <span><strong>{item.title}</strong><small>{index === 0 ? "刚刚" : index === 1 ? "12 分钟前" : "今天 09:42"}</small></span>
+              <span><strong>{item.title}</strong><small>{item.claim}</small></span>
               <ChevronRight size={14} />
             </button>
           ))}
         </div>
-        <div className="service-status"><i /><span><strong>{runtimeMode === "api" ? "Agent API 已连接" : runtimeMode === "fallback" ? "离线回放模式" : runtimeMode === "configured" ? "Agent API 已配置" : "演示快照模式"}</strong><small>Synthetic sandbox</small></span></div>
+        <div className="service-status"><i /><span><strong>{runtimeMode === "api" ? "Agent API 已连接" : runtimeMode === "configured" ? "Agent API 已配置" : "演示快照模式"}</strong><small>Synthetic sandbox</small></span></div>
       </aside>
 
       <div className="app-stage">
@@ -485,14 +526,14 @@ export default function SupportConsole() {
         {view === "workbench" && (
           <div className="workbench-grid">
             <main className="workbench-main">
-              {runError && <div className="runtime-alert" role="status"><ShieldCheck size={16} /><span><strong>真实后端暂时不可用，已切换到离线演示。</strong><small>{runError}</small></span></div>}
+              {runError && <div className="runtime-alert" role="status"><ShieldCheck size={16} /><span><strong>诊断未完成，请稍后重试。你的问题已保留。</strong><small>{runError}</small></span></div>}
               {runState === "idle" ? (
                 <Landing query={query} setQuery={setQuery} onStart={startRun} onSelect={selectScenario} />
               ) : (
                 <RunWorkspace
                   scenario={scenario} runId={runId} runState={runState} stage={stage}
                   checkedSteps={checkedSteps} onToggleStep={(index) => setCheckedSteps((prev) => prev.includes(index) ? prev.filter((x) => x !== index) : [...prev, index])}
-                  onSource={showSource} ticketStatus={ticketStatus} onApproval={() => setApprovalOpen(true)}
+                  onSource={showSource} onEvidence={showEvidence} onRun={showRun} submittedQuery={submittedQuery} ticketStatus={ticketStatus} onApproval={() => setApprovalOpen(true)}
                   query={query} setQuery={setQuery} onStart={startRun}
                 />
               )}
@@ -523,7 +564,7 @@ export default function SupportConsole() {
             <span className="approval-icon"><TicketCheck /></span>
             <span className="micro-label">DETERMINISTIC POLICY GATE</span>
             <h2 id="approval-title">确认创建 {scenario.risk === "高风险" ? "P1" : "P2"} 运维工单？</h2>
-            <p>这是一次写操作。Graph 已在 <code>create_ticket</code> 前暂停，只有你的明确批准才会继续执行。</p>
+            <p>{scenario.runtime === "api" ? "这是一次写操作。工作流已暂停，只有明确批准才会继续创建工单。" : "此处演示人工确认流程，仅记录本次会话的选择，不创建外部工单。刷新页面后重置。"}</p>
             <div className="approval-preview"><span>Action</span><code>create_ticket</code><span>Run</span><code>{runId}</code><span>Policy</span><code>REQUIRE_CONFIRM</code></div>
             <div className="modal-actions">
               <button className="ghost-button" disabled={approvalPending} onClick={() => void decideApproval("reject")}>拒绝，不执行</button>
@@ -541,16 +582,16 @@ function Landing({ query, setQuery, onStart, onSelect }: { query: string; setQue
     <div className="hero-copy">
       <span className="hero-kicker"><Sparkles size={15} /> ENTERPRISE SUPPORT COPILOT</span>
       <h1><span className="headline-line"><span>把复杂的系统问题，</span></span><span className="headline-line"><span><em>变成可验证的诊断。</em></span></span></h1>
-      <p>描述报销系统中的操作、权限、审批、主数据、凭证或接口问题。Agent 会先补齐上下文，再检索知识并按需查询模拟 ERP。</p>
+      <p>选择下方案例并点击「开始诊断」，查看知识引用、工具证据与处置建议。当前展示四个固定案例；开放问答需连接诊断后端。</p>
     </div>
     <div className="capability-strip" aria-label="核心能力">
-      <div><span><Layers3 /></span><strong>问题路由</strong><small>6 类故障结构化分类</small></div>
+      <div><span><Layers3 /></span><strong>问题路由</strong><small>6 类故障路由 · 当前演示 4 例</small></div>
       <div><span><BookOpen /></span><strong>可信检索</strong><small>企业知识库 Top 3 引用</small></div>
       <div><span><ShieldCheck /></span><strong>受控执行</strong><small>写操作强制人工确认</small></div>
     </div>
     <div className="snapshot-hint"><span><Activity /></span><div><strong>右侧已加载一条完整运行快照</strong><p>切换「执行轨迹 / 工具调用 / 知识来源」，每一项都可以点开查看输入、输出和审计信息。</p></div><b>可交互</b></div>
     <section className="scenario-section">
-      <div className="section-heading"><strong>试一个真实场景</strong><span>点击填入问题，再由你开始分析</span></div>
+      <div className="section-heading"><strong>试一个业务场景</strong><span>点击填入问题，再由你开始分析</span></div>
       <div className="scenario-grid">
         {scenarios.map((item, index) => <button key={item.id} onClick={() => onSelect(item)}><span className={`scenario-icon tone-${index}`}>{index === 0 ? <FileJson /> : index === 1 ? <Database /> : index === 2 ? <ShieldCheck /> : <Zap />}</span><span><strong>{item.title}</strong><small>{item.claim} · {item.caption}</small></span><ChevronRight /></button>)}
       </div>
@@ -559,47 +600,47 @@ function Landing({ query, setQuery, onStart, onSelect }: { query: string; setQue
   </div>;
 }
 
-function QueryComposer({ query, setQuery, onStart }: { query: string; setQuery: (value: string) => void; onStart: () => void }) {
+function QueryComposer({ query, setQuery, onStart, running = false }: { query: string; setQuery: (value: string) => void; onStart: () => void; running?: boolean }) {
   return <div className="composer-wrap">
     <label htmlFor="support-query">描述系统问题</label>
     <div className="composer">
       <textarea id="support-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如：CLM-2026-005 为什么凭证生成失败？" />
-      <div><span><ShieldCheck size={13} />只读查询默认安全；写操作需人工确认</span><button disabled={!query.trim()} onClick={onStart}>开始诊断<ArrowUp size={16} /></button></div>
+      <div><span><ShieldCheck size={13} />只读查询默认安全；写操作需人工确认</span><button disabled={!query.trim() || running} onClick={onStart}>{running ? "诊断中…" : "开始诊断"}<ArrowUp size={16} /></button></div>
     </div>
-    <small className="synthetic-note">本演示仅使用合成数据。Agent 在证据不足时会明确请求补充信息。</small>
+    <small className="synthetic-note">合成数据演示：按示例编号回放既有诊断；未匹配的对象会提示补充信息。</small>
   </div>;
 }
 
 function RunWorkspace(props: {
   scenario: Scenario; runId: string; runState: "running" | "complete"; stage: number;
-  checkedSteps: number[]; onToggleStep: (index: number) => void; onSource: (source: Scenario["sources"][number]) => void;
+  submittedQuery: string; onEvidence: () => void; onRun: () => void; checkedSteps: number[]; onToggleStep: (index: number) => void; onSource: (source: Scenario["sources"][number]) => void;
   ticketStatus: "idle" | "created" | "rejected"; onApproval: () => void; query: string; setQuery: (value: string) => void; onStart: () => void;
 }) {
-  const { scenario, runId, runState, stage, checkedSteps, onToggleStep, onSource, ticketStatus, onApproval, query, setQuery, onStart } = props;
+  const { scenario, runId, runState, stage, checkedSteps, onToggleStep, onSource, onEvidence, onRun, submittedQuery, ticketStatus, onApproval, query, setQuery, onStart } = props;
   return <div className="run-workspace">
     <div className="agent-row"><span><Bot /></span><div><strong>Support Agent</strong><small>RAG · Tool Calling · Human-in-the-loop</small></div></div>
-    <div className="question-row"><b>你</b><div><span>你的问题</span><p>{query}</p></div></div>
+    <div className="question-row"><b>你</b><div><span>你的问题</span><p>{submittedQuery}</p></div></div>
     {runState === "running" ? <ProgressCard stage={stage} /> : (
       <div className="result-block">
-        <div className="result-author"><span><Sparkles /></span><strong>Support Copilot · 诊断完成</strong><button>{runId}</button></div>
+        <div className="result-author"><span><Sparkles /></span><strong>Support Copilot · {scenario.runtime === "api" ? "诊断完成" : "示例诊断"}</strong><button onClick={onRun}>{runId}</button></div>
         <article className="diagnosis-card">
           <div className="diagnosis-hero"><div><span className="micro-label">根因判断</span><h2>{scenario.rootCause}</h2></div><span className={`risk-pill ${scenario.risk}`}>{scenario.risk}</span></div>
-          <div className="metric-row"><div><span>问题分类</span><strong>{scenario.category}</strong></div><div><span>证据置信度</span><strong>{scenario.confidence}%</strong></div><div><span>运行耗时</span><strong>{scenario.duration}</strong></div></div>
-          <section className="diagnosis-section"><div className="subheading"><strong>诊断证据</strong><span>工具结果与知识交叉验证</span></div>{scenario.sources[0] ? <button className="evidence-proof" onClick={() => onSource(scenario.sources[0])}><Check size={16} /><span>{scenario.evidence}</span><ChevronRight size={15} /></button> : <div className="evidence-proof"><ShieldCheck size={16} /><span>{scenario.evidence}</span></div>}</section>
+          <div className="metric-row"><div><span>问题分类</span><strong>{scenario.category}</strong></div><div><span>{scenario.runtime === "api" ? "诊断置信度" : "示例置信度"}</span><strong>{scenario.confidence}%</strong></div><div><span>{scenario.runtime === "api" ? "运行耗时" : "快照耗时"}</span><strong>{scenario.duration}</strong></div></div>
+          <section className="diagnosis-section"><div className="subheading"><strong>诊断证据</strong><span>工具结果与知识交叉验证</span></div>{scenario.sources[0] ? <button className="evidence-proof" onClick={onEvidence}><Check size={16} /><span>{scenario.evidence}</span><ChevronRight size={15} /></button> : <div className="evidence-proof"><ShieldCheck size={16} /><span>{scenario.evidence}</span></div>}</section>
           <section className="diagnosis-section"><div className="subheading"><strong>建议处理步骤</strong><span>{checkedSteps.length}/{scenario.steps.length} 已完成</span></div><div className="step-list">{scenario.steps.map((step, index) => <button className={checkedSteps.includes(index) ? "done" : ""} key={step} onClick={() => onToggleStep(index)}><span>{checkedSteps.includes(index) ? <Check size={14} /> : index + 1}</span><strong>{step}</strong></button>)}</div></section>
           <section className="diagnosis-section"><div className="subheading"><strong>引用知识</strong><span>{scenario.retrievalLabel ?? "Deterministic retrieval"}</span></div><div className="source-cards">{scenario.sources.map((source) => <button key={source.id} onClick={() => onSource(source)}><span>{source.id}</span><strong>{source.title}</strong><small>{source.score}%</small></button>)}</div></section>
           {scenario.needsApproval && ticketStatus === "idle" && <div className="escalation-card"><span><TicketCheck /></span><div><strong>建议升级人工支持</strong><p>涉及受控配置或高风险故障，创建工单需要人工确认。</p></div><button onClick={onApproval}>创建工单</button></div>}
-          {ticketStatus !== "idle" && <div className={`ticket-result ${ticketStatus}`}><span>{ticketStatus === "created" ? <Check /> : <X />}</span><div><strong>{ticketStatus === "created" ? "工单已创建" : "已拒绝写操作"}</strong><p>{ticketStatus === "created" ? `${scenario.ticketId ?? "INC-2481"} · 已使用 run_id 作为幂等键。` : "Graph 已结束，Mock ERP 未收到写入请求。"}</p></div></div>}
+          {ticketStatus !== "idle" && <div className={`ticket-result ${ticketStatus}`}><span>{ticketStatus === "created" ? <Check /> : <X />}</span><div><strong>{ticketStatus === "created" ? (scenario.runtime === "api" ? "工单已创建" : "演示工单已记录") : "已拒绝创建工单"}</strong><p>{ticketStatus === "created" ? (scenario.runtime === "api" ? `${scenario.ticketId} · 后端已确认创建。` : `DEMO-${runId} · 仅本次会话有效，未创建外部工单。`) : "已记录拒绝决定，本次不会创建工单。"}</p></div></div>}
         </article>
       </div>
     )}
-    <QueryComposer query={query} setQuery={setQuery} onStart={onStart} />
+    <QueryComposer query={query} setQuery={setQuery} onStart={onStart} running={runState === "running"} />
   </div>;
 }
 
 function ProgressCard({ stage }: { stage: number }) {
-  const percent = Math.min(100, Math.max(8, stage * 20));
-  return <div className="progress-shell"><div className="result-author"><span><Sparkles /></span><strong>Support Copilot · 正在分析</strong></div><div className="progress-card"><div className="progress-head"><span className="spinner" /><div><strong>{traceStages[Math.min(stage, 4)][0]}</strong><small>{traceStages[Math.min(stage, 4)][1]}</small></div><b>{percent}%</b></div><div className="progress-bar"><i style={{ width: `${percent}%` }} /></div><div className="progress-stages">{traceStages.map(([label], index) => <div className={index < stage ? "done" : index === stage ? "active" : ""} key={label}><span>{index < stage ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div></div></div>;
+  const percent = Math.min(96, Math.max(8, stage * 20));
+  return <div className="progress-shell"><div className="result-author"><span><Sparkles /></span><strong>Support Copilot · {hasConfiguredApi() ? "正在分析" : "正在回放"}</strong></div><div className="progress-card"><div className="progress-head"><span className="spinner" /><div><strong>{traceStages[Math.min(stage, 4)][0]}</strong><small>{traceStages[Math.min(stage, 4)][1]}</small></div><b>{percent}%</b></div><div className="progress-bar"><i style={{ width: `${percent}%` }} /></div><div className="progress-stages">{traceStages.map(([label], index) => <div className={index < stage ? "done" : index === stage ? "active" : ""} key={label}><span>{index < stage ? <Check size={13} /> : index + 1}</span><small>{label}</small></div>)}</div></div></div>;
 }
 
 function EvidencePanel(props: {
@@ -621,7 +662,7 @@ function EvidencePanel(props: {
     <div className="evidence-header"><div><strong>执行详情</strong><small>{runId} · {scenario.claim}</small></div><span className={isComplete ? "complete" : "running"}>{isSnapshot ? <><CircleDot size={12} />示例快照</> : runState === "complete" ? <><Check size={12} />完成</> : <><Activity size={12} />执行中</>}</span></div>
     <div className="detail-tabs" role="tablist">{(["trace", "tools", "knowledge"] as DetailTab[]).map((tab) => <button role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}><span>{tabMeta[tab].label}</span><b>{tabMeta[tab].count}</b></button>)}</div>
     <div className="detail-content">
-      {isSnapshot && <div className="snapshot-banner"><Sparkles /><p><strong>作品演示快照</strong>当前内容来自最近一次脱敏运行，可直接点击查看；发起诊断后会切换为实时推进。</p></div>}
+      {isSnapshot && <div className="snapshot-banner"><Sparkles /><p><strong>作品演示快照</strong>当前展示固定的合成案例，可点击查看；开始诊断后按步骤回放。连接后端时才执行新查询。</p></div>}
       {activeTab === "trace" ? (
         <div className="trace-list">{events.map((event, index) => {
           const done = isComplete || index < stage;
@@ -629,17 +670,17 @@ function EvidencePanel(props: {
           return <button className={done ? "done" : active ? "active" : "queued"} key={event.node} disabled={!done && !active} onClick={() => onTrace(event, index)}><span>{done ? <Check size={13} /> : index + 1}</span><div><strong>{event.label}<code>{event.node}</code></strong><small>{event.caption}</small></div><b>{done ? `${event.latency} ms` : active ? "RUNNING" : "QUEUED"}</b><ChevronRight /></button>;
         })}</div>
       ) : activeTab === "tools" ? (
-        <div className="tool-list"><div className="panel-summary"><span>REST boundary</span><strong>{scenario.tools.length} 次只读调用</strong><small>0 retry · 0 side effect</small></div>{scenario.tools.map((tool) => { const available = isComplete || stage >= 4; return <button key={tool.name} disabled={!available} onClick={() => onTool(tool)}><span><Wrench /></span><div><strong>{tool.name}</strong><small>{available ? `200 OK · ${tool.latency} ms · READ ONLY` : "等待 execute_tools 节点"}</small></div><i className={available ? "ok" : ""}>{available ? "OK" : "—"}</i><ChevronRight /></button>; })}</div>
+        <div className="tool-list"><div className="panel-summary"><span>REST boundary</span><strong>{scenario.tools.length} 次只读调用</strong><small>0 retry · 0 side effect</small></div>{scenario.tools.map((tool) => { const available = isComplete || stage >= 4; return <button key={tool.name} disabled={!available} onClick={() => onTool(tool)}><span><Wrench /></span><div><strong>{tool.name}</strong><small>{available ? `${tool.ok === false ? "ERROR" : "OK"} · ${tool.latency} ms · READ ONLY` : "等待 execute_tools 节点"}</small></div><i className={available ? "ok" : ""}>{available ? (tool.ok === false ? "ERROR" : "OK") : "—"}</i><ChevronRight /></button>; })}</div>
       ) : (
         <div className="knowledge-list"><div className="panel-summary"><span>{scenario.retrievalLabel ?? "Deterministic retrieval"}</span><strong>Top {scenario.sources.length} 已通过引用校验</strong><small>collection: enterprise-kb</small></div>{scenario.sources.map((source) => { const available = isComplete || stage >= 2; return <button key={source.id} disabled={!available} onClick={() => onSource(source)}><span><BookOpen /></span><div><strong>{source.title}</strong><small>{source.id} · score {source.score / 100}</small><p>{source.excerpt}</p></div><i>{source.score}%</i><ChevronRight /></button>; })}</div>
       )}
     </div>
-    <div className="evidence-footer"><button onClick={onJson} disabled={!isComplete}><span><Braces /></span><div><strong>结构化输出</strong><small>{isSnapshot ? "查看该快照的 API JSON" : "查看 API JSON 响应"}</small></div><ChevronRight /></button><div className="eval-mini"><span><strong>54</strong><small>Eval cases</small></span><span><strong>100%</strong><small>Retrieval hit@3</small></span></div><p>deterministic baseline · synthetic data · rerunnable</p></div>
+    <div className="evidence-footer"><button onClick={onJson} disabled={!isComplete}><span><Braces /></span><div><strong>结构化输出</strong><small>{isSnapshot ? "查看该快照的 JSON" : "查看诊断 JSON 记录"}</small></div><ChevronRight /></button><div className="eval-mini"><span><strong>54</strong><small>基线评测案例</small></span><span><strong>100%</strong><small>基线检索命中率</small></span></div><p>固定基线 · 合成数据 · 非生产准确率</p></div>
   </aside>;
 }
 
 function RunHistory({ onOpen }: { onOpen: (item: Scenario) => void }) {
-  return <main className="page-view"><div className="page-intro"><span className="hero-kicker"><History size={15} /> AUDITABLE RUNS</span><h1><span className="headline-line"><span>每一次判断，</span></span><span className="headline-line"><span>都能沿证据链复盘。</span></span></h1><p>运行记录保留问题分类、检索来源、工具结果、人工决策和最终状态。这里展示的是脱敏的合成运行。</p></div><div className="history-table"><div className="history-head"><span>运行</span><span>分类</span><span>风险</span><span>状态</span><span>耗时</span><span /></div>{scenarios.map((item) => <button key={item.id} onClick={() => onOpen(item)}><span><b>{getRunId(item.id)}</b><small>{item.question}</small></span><span>{item.category}</span><span><i className={`risk-dot ${item.risk}`} />{item.risk}</span><span className="success-state"><Check size={15} />完成</span><span>{item.duration}</span><ChevronRight size={17} /></button>)}</div><div className="history-summary"><div><strong>54</strong><span>评测案例</span></div><div><strong>0</strong><span>基线执行失败</span></div><div><strong>100%</strong><span>Citation coverage</span></div><div><strong>100%</strong><span>Retrieval hit@3</span></div></div><p className="baseline-disclaimer">这些指标来自仓库内 deterministic baseline 的实际结果，不代表生产模型准确率。</p></main>;
+  return <main className="page-view"><div className="page-intro"><span className="hero-kicker"><History size={15} /> AUDITABLE RUNS</span><h1><span className="headline-line"><span>每一次判断，</span></span><span className="headline-line"><span>都能沿证据链复盘。</span></span></h1><p>运行记录保留问题分类、检索来源、工具结果、人工决策和最终状态。这里展示四个合成案例；本次会话的人工决定可重新打开查看，刷新后重置。</p></div><div className="history-table"><div className="history-head"><span>运行</span><span>分类</span><span>风险</span><span>状态</span><span>耗时</span><span /></div>{scenarios.map((item) => <button key={item.id} onClick={() => onOpen(item)}><span><b>{getRunId(item.id)}</b><small>{item.question}</small></span><span>{item.category}</span><span><i className={`risk-dot ${item.risk}`} />{item.risk}</span><span className="success-state"><Check size={15} />完成</span><span>{item.duration}</span><ChevronRight size={17} /></button>)}</div><div className="history-summary"><div><strong>54</strong><span>评测案例</span></div><div><strong>0</strong><span>基线执行失败</span></div><div><strong>100%</strong><span>Citation coverage</span></div><div><strong>100%</strong><span>Retrieval hit@3</span></div></div><p className="baseline-disclaimer">这些指标来自仓库内 deterministic baseline 的实际结果，不代表生产模型准确率。</p></main>;
 }
 
 const codeSnapshots = {
@@ -654,10 +695,10 @@ function EngineeringView({ activeTab, setActiveTab, onCopy, copied }: { activeTa
     <div className="engineering-grid"><section className="code-panel"><div className="code-tabs">{(["code", "json", "trace"] as EngineeringTab[]).map((tab) => <button className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>{tab === "code" ? <><Code2 />Code</> : tab === "json" ? <><FileJson />JSON</> : <><Terminal />Trace</>}</button>)}<button className="copy-button" onClick={() => onCopy(codeSnapshots[activeTab])}>{copied ? <Check /> : <Copy />}{copied ? "已复制" : "复制"}</button></div><div className="code-caption"><span>示例 / 运行快照</span><small>已脱敏，不含模型私有推理或环境变量</small></div><pre><code>{codeSnapshots[activeTab]}</code></pre></section>
       <section className="principles-panel"><span className="micro-label">设计原理 / 面试看点</span><div><span><ShieldCheck /></span><strong>为什么 Agent 不直连 ERP 数据库？</strong><p>REST 边界保留系统所有权、JSON 契约、鉴权位置和完整审计轨迹。</p></div><div><span><TicketCheck /></span><strong>为什么写操作必须 HITL？</strong><p>LLM 只能提议；确定性策略在 side effect 之前中断并等待责任人批准。</p></div><div><span><CircleDot /></span><strong>证据门如何防幻觉？</strong><p>输出引用必须属于当次 Top 3；无有效工具证据时会降低置信度并明确不足。</p></div><div><span><Activity /></span><strong>run_id 与 thread_id</strong><p>run_id 标识一次诊断与幂等写入；thread_id 标识可暂停、可恢复的 Graph checkpoint。</p></div></section>
     </div>
-    <section className="eval-proof"><div><span className="micro-label">ACTUAL BASELINE</span><h2>评测结果来自仓库内实际 runner</h2><p>54 条人工 ground truth · deterministic-baseline-v2 · 0 execution failures</p></div><div><strong>100%</strong><small>Classification</small></div><div><strong>100%</strong><small>Tool selection</small></div><div><strong>100%</strong><small>Retrieval hit@3</small></div><div><strong>100%</strong><small>Evidence validity</small></div></section>
+    <section className="eval-proof"><div><span className="micro-label">ACTUAL BASELINE</span><h2>评测结果来自仓库内实际 runner</h2><p>54 条人工 ground truth · deterministic-baseline-v2 · 0 execution failures</p></div><div><strong>100%</strong><small>Classification</small></div><div><strong>100%</strong><small>Tool selection</small></div><div><strong>100%</strong><small>基线检索命中率</small></div><div><strong>100%</strong><small>Evidence validity</small></div></section>
   </main>;
 }
 
 function DetailModal({ detail, onClose, onCopy, copied }: { detail: { title: string; subtitle: string; body: string; code?: boolean }; onClose: () => void; onCopy: () => void; copied: boolean }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><div className="detail-modal-head"><div><span className="micro-label">TRACE DETAIL</span><h2 id="detail-title">{detail.title}</h2><p>{detail.subtitle}</p></div><button aria-label="关闭详情" onClick={onClose}><X /></button></div>{detail.code ? <pre><code>{detail.body}</code></pre> : <div className="source-excerpt">{detail.body}</div>}<div className="modal-explainer"><strong>为什么展示这个？</strong><p>面试时可以沿着这条记录解释 Agent 如何从输入、检索和工具结果形成最终结论。</p></div><div className="modal-actions"><button className="ghost-button" onClick={onCopy}>{copied ? <Check size={15} /> : <Clipboard size={15} />}{copied ? "已复制" : "复制内容"}</button><button className="primary-action" onClick={onClose}>完成</button></div></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><div className="detail-modal-head"><div><span className="micro-label">TRACE DETAIL</span><h2 id="detail-title">{detail.title}</h2><p>{detail.subtitle}</p></div><button aria-label="关闭详情" onClick={onClose}><X /></button></div>{detail.code ? <pre><code>{detail.body}</code></pre> : <div className="source-excerpt">{detail.body}</div>}<div className="modal-explainer"><strong>记录说明</strong><p>可核对当前记录的输入、来源与输出。标记为示例的内容来自固定案例，接口模式展示后端返回结果。</p></div><div className="modal-actions"><button className="ghost-button" onClick={onCopy}>{copied ? <Check size={15} /> : <Clipboard size={15} />}{copied ? "已复制" : "复制内容"}</button><button className="primary-action" onClick={onClose}>完成</button></div></section></div>;
 }

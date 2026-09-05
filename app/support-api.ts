@@ -73,6 +73,7 @@ export function hasConfiguredApi() {
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${configuredBaseUrl}${path}`, {
     ...init,
+    signal: AbortSignal.timeout(30000),
     headers: { "content-type": "application/json", ...init.headers },
   });
   if (!response.ok) {
